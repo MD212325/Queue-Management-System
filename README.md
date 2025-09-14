@@ -74,12 +74,6 @@ queue-display-system/
 
 ---
 
-## 📌 Notes
-- Do **not** upload `node_modules/` to GitHub (it is ignored with `.gitignore`).
-- You can run the system on multiple PCs if they are on the same local network by sharing the host IP.
-
----
-
 ## 🛠️ Tech Stack
 - **Frontend**: React + Vite
 - **Styling**: CSS
