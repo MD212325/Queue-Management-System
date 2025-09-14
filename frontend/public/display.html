@@ -1,0 +1,166 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Queue Display - Full List</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="display.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Registrar Queue Display</h1>
+      <div style="color:#9aa0a6; font-size:14px">Auto-updates: SSE + Polling fallback</div>
+    </header>
+
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <script>
+    // ============ CONFIG ============
+    // Change this to your backend server address if the TV/browser is on a different device.
+    // If the display runs on the same machine as the server, 'http://localhost:4000' is fine.
+    // If the display is on another device, set the machine's LAN IP (e.g. 'http://192.168.1.42:4000').
+    const API_HOST = 'http://localhost:4000'; // <<--- REPLACE if needed
+
+    // services and labels (order shown left to right)
+    const SERVICES = [
+      { key: 'registrar', label: 'Registrar' },
+      { key: 'cashier',   label: 'Cashier' },
+      { key: 'admissions',label: 'Admissions' },
+      { key: 'records',   label: 'Records' }
+    ];
+
+    // how many tokens to show per service (top N)
+    const SHOW_N = 999;
+
+    // polling fallback interval (ms)
+    const POLL_MS = 8000;
+
+    // ============ UI BUILD ============
+    const grid = document.getElementById('grid');
+
+    function makeServiceCard(svc){
+      const card = document.createElement('div');
+      card.className = 'service';
+      card.id = 'svc-' + svc.key;
+      card.innerHTML = `
+        <h2>${svc.label}</h2>
+        <div class="meta" id="meta-${svc.key}">
+          <div id="${svc.key}-called">Called: —</div>
+          <div id="${svc.key}-waiting">Waiting: 0</div>
+        </div>
+        <div class="list" id="list-${svc.key}"></div>
+      `;
+      return card;
+    }
+
+    SERVICES.forEach(svc => grid.appendChild(makeServiceCard(svc)));
+
+    // ============ Helpers ============
+    function safeParse(text){
+      try { return JSON.parse(text); } catch(e) { return null; }
+    }
+
+    function renderListForService(svcKey, tokens){
+      const container = document.getElementById('list-' + svcKey);
+      container.innerHTML = '';
+      if(!tokens || tokens.length === 0){
+        const empty = document.createElement('div');
+        empty.className = 'token-row';
+        empty.textContent = 'No tokens';
+        container.appendChild(empty);
+        return;
+      }
+
+      // find top called token, else first
+      const top = tokens.find(t => t.status === 'called') || tokens[0];
+      if(top){
+        const tr = document.createElement('div');
+        tr.className = 'token-row top';
+        tr.innerHTML = `<div style="display:flex;align-items:center;gap:12px;"><div class="token">${top.token}</div><div class="who" title="${(top.name||'')}">${top.name || ''}</div></div><div class="status">${top.status||''}</div>`;
+        container.appendChild(tr);
+      }
+
+      const rest = tokens.filter(t => t !== top).slice(0, SHOW_N-1);
+      rest.forEach(r => {
+        const tr = document.createElement('div');
+        tr.className = 'token-row';
+        tr.innerHTML = `<div style="display:flex;align-items:center;gap:12px;"><div class="token">${r.token}</div><div class="who" title="${(r.name||'')}">${r.name || ''}</div></div><div class="status">${r.status||''}</div>`;
+        container.appendChild(tr);
+      });
+    }
+
+    function updateMeta(svcKey, tokens){
+      const calledCount = tokens.filter(t => t.status === 'called').length;
+      const waitingCount = tokens.filter(t => t.status === 'waiting').length;
+      const calledEl = document.getElementById(`${svcKey}-called`);
+      const waitingEl = document.getElementById(`${svcKey}-waiting`);
+      calledEl.textContent = `Called: ${calledCount || '—'}`;
+      waitingEl.textContent = `Waiting: ${waitingCount}`;
+    }
+
+    // ============ Fetch & render ============
+    async function fetchQueueAndRender(){
+      try {
+        const resp = await fetch(API_HOST + '/queue');
+        const text = await resp.text();
+        const rows = safeParse(text);
+        if(!rows) {
+          console.error('Queue fetch did not return JSON:', text);
+          return;
+        }
+        const groups = {};
+        rows.forEach(r => {
+          const svc = r.service || 'registrar';
+          groups[svc] = groups[svc] || [];
+          groups[svc].push(r);
+        });
+        SERVICES.forEach(svc=>{
+          const list = (groups[svc.key] || []).slice(); // oldest-first
+          renderListForService(svc.key, list);
+          updateMeta(svc.key, list);
+        });
+      } catch(e){
+        console.error('fetchQueue error', e);
+      }
+    }
+
+    // ============ SSE (preferred) & polling fallback ============
+    let sse;
+    function startSSE(){
+      try {
+        sse = new EventSource(API_HOST + '/events');
+        sse.onopen = () => console.log('SSE connected');
+        sse.onerror = (e) => {
+          console.warn('SSE error or closed, starting polling', e);
+          try { sse.close(); } catch(_) {}
+          startPolling();
+        };
+
+        ['created','called','served','hold','recalled','deleted'].forEach(evt=>{
+          sse.addEventListener(evt, ev=>{
+            const data = safeParse(ev.data);
+            // on any change just re-fetch queue (robust)
+            fetchQueueAndRender();
+          });
+        });
+
+      } catch(e){
+        console.warn('SSE start failed, using polling', e);
+        startPolling();
+      }
+    }
+
+    let pollTimer = null;
+    function startPolling(){
+      if(pollTimer) return;
+      pollTimer = setInterval(fetchQueueAndRender, POLL_MS);
+    }
+
+    // ============ Start ============
+    fetchQueueAndRender();
+    startSSE();
+  </script>
+</body>
+</html>
