@@ -17,7 +17,7 @@ Built with **Vite + React** (frontend) and a lightweight backend (HTML/JS/CSS).
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/YourUsername/queue-display-system.git
+git clone https://github.com/MD212325/queue-display-system.git
 cd queue-display-system
 ```
 
