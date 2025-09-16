@@ -35,6 +35,8 @@ node server.js
 
 ### 4. Build for Production
 ```bash
+cd frontend
+npm install
 npm run build
 ```
 
