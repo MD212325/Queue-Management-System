@@ -28,18 +28,23 @@ Then run:
 npm install
 ```
 
-### 3. Run in Development
+### 3. Run the server
+```bash
+node server.js
+```
+
+### 4. Build for Production
+```bash
+npm run build
+```
+
+### 5. Run in Development
 ```bash
 npm run dev
 ```
 This will start the system on:
 ```
 http://localhost:5173
-```
-
-### 4. Build for Production
-```bash
-npm run build
 ```
 The production files will be in the `dist/` folder.
 
