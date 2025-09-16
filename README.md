@@ -18,7 +18,7 @@ Built with **Vite + React** (frontend) and a lightweight backend (HTML/JS/CSS).
 ### 1. Clone the Repository
 ```bash
 git clone https://github.com/MD212325/Queue-Management-System
-cd queue-display-system
+cd Queue-Management-System
 ```
 
 ### 2. Install Dependencies
