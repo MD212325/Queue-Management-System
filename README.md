@@ -22,7 +22,7 @@ cd queue-display-system
 ```
 
 ### 2. Install Dependencies
-Make sure [Node.js](https://nodejs.org/) (LTS version) is installed.  
+Make sure [Node.js](https://nodejs.org/) (v22.14.0) is installed.  
 Then run:
 ```bash
 npm install
