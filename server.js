@@ -1,243 +1,304 @@
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
-const bodyParser = require('body-parser');
+const path = require('path');
 const cors = require('cors');
+const fs = require('fs');
 
-const DB_FILE = './queue.db';
+const PORT = process.env.PORT || 4000;
+const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'queue.db');
+
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-// create DB if not exists
-const db = new sqlite3.Database(DB_FILE);
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Ensure tables and columns exist
-db.serialize(() => {
-  // tickets table with a 'service' column
-  db.run(`CREATE TABLE IF NOT EXISTS tickets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    token TEXT,
-    name TEXT,
-    service TEXT,
-    status TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
+const STAFF_KEY = process.env.STAFF_KEY || 'STI-QUEUE-KEY';
 
-  // counters table to keep per-service sequence
-  db.run(`CREATE TABLE IF NOT EXISTS counters (
-    service TEXT PRIMARY KEY,
-    last_number INTEGER DEFAULT 0
-  )`);
-});
 
-// Simple in-memory list of SSE clients
-let sseClients = [];
-function sendSSE(event, data){
-  const payload = `event: ${event}
-data: ${JSON.stringify(data)}
-
-`;
-  sseClients.forEach(client => client.res.write(payload));
+// Middleware to protect staff routes
+function requireStaff(req, res, next) {
+  const key = req.headers['x-staff-key'] || req.query.staff_key;
+  if (!key || key !== STAFF_KEY) {
+    return res.status(401).json({ error: 'Unauthorized: staff credentials required' });
+  }
+  next();
 }
 
-app.get('/events', (req, res) => {
-  res.set({
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive'
-  });
-  res.flushHeaders();
-  const id = Date.now();
-  sseClients.push({id, res});
-  req.on('close', () => {
-    sseClients = sseClients.filter(c => c.id !== id);
-  });
-});
+// SSE clients storage
+const sseClients = [];
 
-// Helper: get queue
-app.get('/queue', (req, res) => {
-  db.all('SELECT * FROM tickets ORDER BY id', [], (err, rows) => {
-    if(err) return res.status(500).json({error: err.message});
-    res.json(rows);
-  });
-});
-
-// Map service names to prefixes (fallback to first letter uppercase)
-const DEFAULT_PREFIX_MAP = {
+// Service prefix mapping for display tokens
+const SERVICE_PREFIX = {
   registrar: 'R',
   cashier: 'C',
   admissions: 'A',
   records: 'D'
 };
 
-function getPrefixForService(service){
-  if(!service) return 'R';
-  const key = String(service).toLowerCase();
-  if(DEFAULT_PREFIX_MAP[key]) return DEFAULT_PREFIX_MAP[key];
-  return String(service).charAt(0).toUpperCase();
+// Open (or create) DB
+const db = new sqlite3.Database(DB_FILE, (err) => {
+  if (err) {
+    console.error('Failed to open DB', err);
+    process.exit(1);
+  }
+  console.log('Opened DB:', DB_FILE);
+});
+
+// Initialize DB schema (safe to run every startup)
+db.serialize(() => {
+  db.run(
+    `CREATE TABLE IF NOT EXISTS tickets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      services TEXT DEFAULT '[]',     -- JSON array of services
+      quer_type TEXT DEFAULT '',
+      called_service TEXT DEFAULT '',
+      status TEXT DEFAULT 'waiting',  -- waiting, called, served, hold
+      created_at TEXT,
+      updated_at TEXT,
+      served_at TEXT
+    )`
+  , (err) => {
+    if (err) console.error('Create table error', err);
+  });
+});
+
+// Utility: emit SSE event
+function emitEvent(eventName, payload) {
+  const data = JSON.stringify(payload || {});
+  const msg = `event: ${eventName}\ndata: ${data}\n\n`;
+  sseClients.forEach(c => {
+    try {
+      c.res.write(msg);
+    } catch (e) {
+      // ignore
+    }
+  });
 }
 
-// Create ticket (supports service param) - improved with logging and explicit response
-app.post('/ticket', (req, res) => {
-  const { name, service } = req.body || {};
-  const svc = service ? String(service).toLowerCase() : 'registrar';
-  const prefix = getPrefixForService(svc);
+// SSE endpoint
+app.get('/events', (req, res) => {
+  // Set headers for SSE
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+  res.flushHeaders && res.flushHeaders();
 
-  // increment counter atomically: read current, then update
-  db.serialize(() => {
-    db.get('SELECT last_number FROM counters WHERE service = ?', [svc], (err, row) => {
-      if(err) {
-        console.error('[TICKET] counters select error:', err);
-        return res.status(500).json({ error: err.message });
-      }
-      const last = row ? row.last_number : 0;
-      const next = last + 1;
+  // Send a small comment to keep connection alive in some proxies
+  res.write(':ok\n\n');
 
-      // upsert the counter
-      const upsert = `INSERT INTO counters(service, last_number) VALUES(?, ?) ON CONFLICT(service) DO UPDATE SET last_number=excluded.last_number`;
-      db.run(upsert, [svc, next], function(upErr) {
-        if(upErr) {
-          console.error('[TICKET] counters upsert error:', upErr);
-          return res.status(500).json({ error: upErr.message });
-        }
+  const clientId = Date.now() + Math.random();
+  const client = { id: clientId, res };
+  sseClients.push(client);
+  console.log('SSE client connected:', clientId, 'total:', sseClients.length);
 
-        const token = `${prefix}${next}`; // example: C1, R1
-        db.run('INSERT INTO tickets (token, name, service, status) VALUES (?, ?, ?, ?)', [token, name || null, svc, 'waiting'], function(insErr) {
-          if(insErr) {
-            console.error('[TICKET] insert error:', insErr);
-            return res.status(500).json({ error: insErr.message });
-          }
-          const id = this.lastID;
-          db.get('SELECT * FROM tickets WHERE id = ?', [id], (e, row2) => {
-            if(e) {
-              console.error('[TICKET] select after insert error:', e);
-              return res.status(500).json({ error: e.message });
-            }
-            // ensure a clean, explicit JSON response with expected keys
-            const response = {
-              id: row2.id,
-              token: row2.token,
-              name: row2.name,
-              service: row2.service,
-              status: row2.status,
-              created_at: row2.created_at
-            };
-            console.log('[TICKET] created', response);
-            sendSSE('created', response);
-            res.json(response);
-          });
-        });
-      });
+  // Remove client on close
+  req.on('close', () => {
+    const idx = sseClients.findIndex(c => c.id === clientId);
+    if (idx !== -1) sseClients.splice(idx, 1);
+    console.log('SSE client disconnected:', clientId, 'remaining:', sseClients.length);
+  });
+});
+
+// Get full queue (all tickets)
+app.get('/queue', (req, res) => {
+  db.all(`SELECT * FROM tickets ORDER BY id ASC`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'DB error' });
+    // parse services field for convenience
+    const parsed = rows.map(r => {
+      try { r.services = JSON.parse(r.services || '[]'); } catch(e) { r.services = []; }
+      return r;
     });
+    res.json(parsed);
   });
 });
 
-// Call next (staff action) - optionally can supply service to call next for that service
-app.post('/next', (req, res) => {
-  const service = req.body && req.body.service ? String(req.body.service).toLowerCase() : null;
-  const where = service ? `WHERE status = 'waiting' AND service = '${service}'` : "WHERE status = 'waiting'";
-  db.get(`SELECT * FROM tickets ${where} ORDER BY id LIMIT 1`, [], (err, row) => {
-    if(err) return res.status(500).json({error: err.message});
-    if(!row) return res.status(200).json({message: 'No waiting tickets'});
-    db.run("UPDATE tickets SET status = 'called', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [row.id], function(uerr) {
-      db.get('SELECT * FROM tickets WHERE id = ?', [row.id], (e, r) => {
-        sendSSE('called', r);
-        res.json(r);
-      });
-    });
-  });
-});
-
-// Hold a ticket
-app.post('/hold/:id', (req, res) => {
-  const id = req.params.id;
-  db.run("UPDATE tickets SET status = 'hold', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [id], function(err) {
-    if(err) return res.status(500).json({error: err.message});
-    db.get('SELECT * FROM tickets WHERE id = ?', [id], (e, r) => { sendSSE('hold', r); res.json(r); });
-  });
-});
-
-// Recall a ticket (set back to called)
-app.post('/recall/:id', (req, res) => {
-  const id = req.params.id;
-  db.run("UPDATE tickets SET status = 'called', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [id], function(err) {
-    if(err) return res.status(500).json({error: err.message});
-    db.get('SELECT * FROM tickets WHERE id = ?', [id], (e, r) => { sendSSE('recalled', r); res.json(r); });
-  });
-});
-
-// Serve (mark as served)
-app.post('/serve/:id', (req, res) => {
-  const id = req.params.id;
-  db.run("UPDATE tickets SET status = 'served', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [id], function(err) {
-    if(err) return res.status(500).json({error: err.message});
-    db.get('SELECT * FROM tickets WHERE id = ?', [id], (e, r) => { sendSSE('served', r); res.json(r); });
-  });
-});
-
-// Delete a ticket by id
-app.delete('/ticket/:id', (req, res) => {
-  const id = req.params.id;
-  db.get('SELECT * FROM tickets WHERE id = ?', [id], (err, row) => {
-    if(err) return res.status(500).json({error: err.message});
-    if(!row) return res.status(404).json({error: 'Ticket not found'});
-    db.run('DELETE FROM tickets WHERE id = ?', [id], function(dErr) {
-      if(dErr) return res.status(500).json({error: dErr.message});
-      sendSSE('deleted', row);
-      res.json({deleted: true, ticket: row});
-    });
-  });
-});
-
-// Delete a ticket by token (alternative)
-app.delete('/ticket/token/:token', (req, res) => {
-  const token = req.params.token;
-  db.get('SELECT * FROM tickets WHERE token = ?', [token], (err, row) => {
-    if(err) return res.status(500).json({error: err.message});
-    if(!row) return res.status(404).json({error: 'Ticket not found'});
-    db.run('DELETE FROM tickets WHERE token = ?', [token], function(dErr) {
-      if(dErr) return res.status(500).json({error: dErr.message});
-      sendSSE('deleted', row);
-      res.json({deleted: true, ticket: row});
-    });
-  });
-});
-
-// Stats
+// Stats (simple)
 app.get('/stats', (req, res) => {
-  db.serialize(() => {
-    db.get("SELECT COUNT(*) as waiting FROM tickets WHERE status='waiting'", [], (e1, w) => {
-      db.get("SELECT COUNT(*) as served FROM tickets WHERE status='served'", [], (e2, s) => {
-        res.json({waiting: w.waiting || 0, served: s.served || 0});
-      });
+  db.get(
+    `SELECT 
+       SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END) AS waiting,
+       SUM(CASE WHEN status='served' THEN 1 ELSE 0 END) AS served
+     FROM tickets`, [],
+    (err, row) => {
+      if (err) return res.status(500).json({ error: 'DB error' });
+      res.json({ waiting: row.waiting || 0, served: row.served || 0 });
+    }
+  );
+});
+
+// Create ticket
+app.post('/ticket', (req, res) => {
+  try {
+    const { name, services, quer_type } = req.body;
+    if (!Array.isArray(services) || services.length === 0) {
+      return res.status(400).json({ error: 'Select at least one service.' });
+    }
+    const now = new Date().toISOString();
+    const servicesJson = JSON.stringify(services);
+    db.run(
+      `INSERT INTO tickets (name, services, quer_type, status, created_at, updated_at) VALUES (?, ?, ?, 'waiting', ?, ?)`,
+      [name || '', servicesJson, quer_type || '', now, now],
+      function (err) {
+        if (err) return res.status(500).json({ error: 'DB insert error' });
+        const id = this.lastID;
+        const token = String(id).padStart(3, '0');
+        const resp = { id, token, services, quer_type: quer_type || '', name: name || '', status: 'waiting', created_at: now };
+        emitEvent('created', resp);
+        return res.json(resp);
+      }
+    );
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Call next for a specific service
+app.post('/next', requireStaff, (req, res) => {
+  const { service } = req.body || {};
+  if (!service) return res.status(400).json({ error: 'service required' });
+
+  // Find earliest waiting ticket that includes this service
+  db.all(`SELECT * FROM tickets WHERE status = 'waiting' ORDER BY id ASC`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'DB error' });
+    let matched = null;
+    for (const r of rows) {
+      let sv = [];
+      try { sv = JSON.parse(r.services || '[]'); } catch(e) { sv = []; }
+      if (Array.isArray(sv) && sv.includes(service)) {
+        matched = r;
+        break;
+      }
+    }
+    if (!matched) return res.json({ message: 'No waiting ticket for this service' });
+
+    const calledAt = new Date().toISOString();
+    db.run(
+      `UPDATE tickets SET status = 'called', called_service = ?, updated_at = ? WHERE id = ?`,
+      [service, calledAt, matched.id],
+      function (err2) {
+        if (err2) return res.status(500).json({ error: 'DB update error' });
+        const tokenNumeric = String(matched.id).padStart(3, '0');
+        const prefix = SERVICE_PREFIX[service] || '';
+        const displayToken = prefix + tokenNumeric;
+        const payload = {
+          id: matched.id,
+          token: tokenNumeric,
+          displayToken,
+          service,
+          quer_type: matched.quer_type,
+          name: matched.name,
+          status: 'called',
+          called_at: calledAt
+        };
+        emitEvent('called', payload);
+        return res.json({ message: `Called ${displayToken}`, ticket: payload });
+      }
+    );
+  });
+});
+
+// Serve a ticket (mark served)
+app.post('/serve/:id', requireStaff, (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  const now = new Date().toISOString();
+  db.run(
+    `UPDATE tickets SET status = 'served', served_at = ?, updated_at = ? WHERE id = ?`,
+    [now, now, id],
+    function (err) {
+      if (err) return res.status(500).json({ error: 'DB error' });
+      emitEvent('served', { id, status: 'served', served_at: now });
+      res.json({ ok: true });
+    }
+  );
+});
+
+// Put a ticket on hold
+app.post('/hold/:id', requireStaff, (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  const now = new Date().toISOString();
+  db.run(
+    `UPDATE tickets SET status = 'hold', updated_at = ? WHERE id = ?`,
+    [now, id],
+    function (err) {
+      if (err) return res.status(500).json({ error: 'DB error' });
+      emitEvent('hold', { id, status: 'hold' });
+      res.json({ ok: true });
+    }
+  );
+});
+
+// Recall a held ticket (return to waiting or called depending on use case)
+// Here we set it back to waiting
+app.post('/recall/:id', requireStaff, (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  const now = new Date().toISOString();
+  db.run(
+    `UPDATE tickets SET status = 'waiting', updated_at = ? WHERE id = ?`,
+    [now, id],
+    function (err) {
+      if (err) return res.status(500).json({ error: 'DB error' });
+      emitEvent('recalled', { id, status: 'waiting' });
+      res.json({ ok: true });
+    }
+  );
+});
+
+// Delete ticket
+app.delete('/ticket/:id', requireStaff, (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  db.get(`SELECT * FROM tickets WHERE id = ?`, [id], (e, row) => {
+    if (e) return res.status(500).json({ error: 'DB error' });
+    if (!row) return res.status(404).json({ error: 'not found' });
+    db.run(`DELETE FROM tickets WHERE id = ?`, [id], function (err) {
+      if (err) return res.status(500).json({ error: 'DB error' });
+      emitEvent('deleted', { id, token: String(row.id).padStart(3, '0'), service: row.called_service || null });
+      res.json({ ok: true });
     });
   });
 });
 
-// CSV export
+// Export CSV
 app.get('/export.csv', (req, res) => {
   db.all('SELECT * FROM tickets ORDER BY id', [], (err, rows) => {
     if (err) return res.status(500).send('Error');
-    const header = 'id,token,name,service,status,created_at,updated_at\n';
-    const body = rows
-      .map(r => `${r.id},${r.token},${r.name || ''},${r.service || ''},${r.status},${r.created_at},${r.updated_at}`)
-      .join('\n');
+    // header must be a single JS string line (no literal newline)
+    const header = 'id,token,name,services,quer_type,called_service,status,created_at,updated_at,served_at\n';
+    const body = rows.map(r => {
+      const token = String(r.id).padStart(3, '0');
+      // quote values for CSV safety
+      const q = v => `"${String(v || '').replace(/"/g, '""')}"`;
+      return [
+        r.id,
+        token,
+        q(r.name),
+        q(r.services),
+        q(r.quer_type),
+        q(r.called_service),
+        q(r.status),
+        q(r.created_at),
+        q(r.updated_at),
+        q(r.served_at)
+      ].join(',');
+    }).join('\n');
     res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="tickets.csv"');
     res.send(header + body);
   });
 });
 
-// JSON 404 handler (must go after all routes)
-app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
-});
+// simple health endpoint
+app.get('/health', (req, res) => res.json({ ok: true }));
 
-// Global error handler (must be last middleware)
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err && err.stack ? err.stack : err);
-  res.status(err && err.status ? err.status : 500).json({ error: err && err.message ? err.message : 'Internal server error' });
+// start listening on all interfaces so phones can reach it (0.0.0.0)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server listening at http://0.0.0.0:${PORT}`);
 });
-
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log('Server listening on', PORT));
