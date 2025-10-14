@@ -228,7 +228,7 @@ app.post('/hold/:id', requireStaff, (req, res) => {
     [now, id],
     function (err) {
       if (err) return res.status(500).json({ error: 'DB error' });
-      emitEvent('hold', { id, status: 'hold' });
+      emitEvent('served', { id, status: 'served', served_at: now });
       res.json({ ok: true });
     }
   );
@@ -245,7 +245,7 @@ app.post('/recall/:id', requireStaff, (req, res) => {
     [now, id],
     function (err) {
       if (err) return res.status(500).json({ error: 'DB error' });
-      emitEvent('recalled', { id, status: 'waiting' });
+      emitEvent('served', { id, status: 'served', served_at: now });
       res.json({ ok: true });
     }
   );
@@ -298,7 +298,7 @@ app.get('/export.csv', (req, res) => {
 // simple health endpoint
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// start listening on all interfaces so phones can reach it (0.0.0.0)
+// start listening on all interfaces so phones can reach it
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening at http://0.0.0.0:${PORT}`);
 });
