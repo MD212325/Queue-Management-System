@@ -1,97 +1,116 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* ---------- Service card / grid layout ---------- */
+.service-grid {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 8px;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
+/* Each service card stays a fixed min width so buttons and table don't collapse */
+.service-card {
+  flex: 0 0 320px;            /* fixed width, prevents cards from shrinking too small */
+  min-width: 280px;
+  box-sizing: border-box;
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
+  padding: 14px;
   border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
-
-
-/* Make action buttons align horizontally */
-.actions {
+  background: #1f1f1f;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #eee;
   display: flex;
-  gap: 5px;   /* spacing between buttons */
-  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.actions button {
-  padding: 4px 8px;
-  font-size: 12px;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-th {
-  background-color: #222;  /* matches dark theme */
-  color: #fff;
-  padding: 8px;
-}
-
-td {
-  padding: 6px;
+/* Title and call button */
+.service-card h3 {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+  letter-spacing: 0.06em;
   text-align: center;
-  vertical-align: middle;
 }
 
+/* Make the Call Next button full width but compact */
+.service-card > button {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+}
 
+/* ---------- Table / rows ---------- */
+.service-card table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;        /* important: prevents columns from expanding based on content */
+  background: transparent;
+  color: #ddd;
+}
+
+/* set sensible fixed column widths */
+.service-card thead th {
+  font-size: 12px;
+  text-align: left;
+  padding: 8px 6px;
+  color: #fff;
+  background: #1f1f1f;
+}
+.service-card tbody td {
+  padding: 8px 6px;
+  font-size: 13px;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* column widths (adjust proportions if you want) */
+.service-card td:nth-child(1) { width: 72px; }  /* Token */
+.service-card td:nth-child(2) { width: 100px; } /* Name */
+.service-card td:nth-child(3) { width: 80px; }  /* Type */
+.service-card td:nth-child(4) { width: 70px; }  /* Status */
+.service-card td:nth-child(5) { width: 80px; }  /* Actions */
+
+/* If cell text is too long, wrap inside a small ellipsis area for name */
+.service-card .name-cell {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Actions column: vertical stack ---------- */
+/* Wrap all action buttons in a vertical column so they don't overflow horizontally */
+.service-card .actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+/* button styles for actions */
+.service-card .actions button {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;       /* prevent button inner text from wrapping */
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+
+/* smaller delete button variant */
+.service-card .actions button.delete {
+  background: rgba(180,20,20,0.85);
+}
+
+/* small responsive tweak: if the viewport is very wide, increase card width a bit */
+@media (min-width: 1400px) {
+  .service-card { flex: 0 0 360px; }
+}
