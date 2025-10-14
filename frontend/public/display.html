@@ -4,186 +4,173 @@
   <meta charset="utf-8" />
   <title>Registrar Queue Display</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    /* Minimal display styles - dark theme */
-    body { background:#0b0b0b; color:#fff; font-family: Arial, Helvetica, sans-serif; margin:18px; }
-    h1 { font-size:48px; margin-bottom:18px; color:#fff; }
-    .grid { display:flex; gap:18px; align-items:flex-start; }
-    .col { flex:1; min-width:260px; background:#111; padding:18px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.6); }
-    .col h2 { margin:0 0 8px 0; text-align:center; font-size:18px; letter-spacing:0.06em; }
-    .meta { font-size:13px; color:#bbb; text-align:center; margin-bottom:12px; }
-    .slot { background:#151515; padding:18px; border-radius:8px; margin-bottom:12px; display:flex; align-items:center; gap:12px; }
-    .token { font-size:72px; font-weight:800; color:#fff; min-width:140px; text-align:center; }
-    .info { flex:1; }
-    .info .name { color:#9fb8d9; font-size:20px; margin-bottom:6px; }
-    .info .type { color:#cfd8e6; font-size:14px; }
-    .list-placeholder { background:#121212; padding:12px; border-radius:6px; color:#9aa; text-align:center; }
-    .small { font-size:13px; color:#9aa; }
-    .footer { position:fixed; right:18px; top:18px; color:#9aa; font-size:12px; }
-  </style>
+  <link rel="stylesheet" href="display.css" />
 </head>
 <body>
   <h1>Registrar Queue Display</h1>
-  <div class="footer">Auto-updates: SSE + Polling fallback</div>
 
   <div class="grid" id="grid">
-    <!-- Four columns: registrar, cashier, admissions, records -->
     <div class="col" data-service="registrar">
       <h2>Registrar</h2>
-      <div class="meta" id="meta-registrar">Called: — &nbsp; Waiting: 0</div>
-      <div id="list-registrar"></div>
+      <div class="meta" id="meta-registrar">Called: —  Waiting: 0</div>
+      <div id="called-registrar"></div>
+      <div class="waiting-list" id="list-registrar"></div>
     </div>
 
     <div class="col" data-service="cashier">
       <h2>Cashier</h2>
-      <div class="meta" id="meta-cashier">Called: — &nbsp; Waiting: 0</div>
-      <div id="list-cashier"></div>
+      <div class="meta" id="meta-cashier">Called: —  Waiting: 0</div>
+      <div id="called-cashier"></div>
+      <div class="waiting-list" id="list-cashier"></div>
     </div>
 
     <div class="col" data-service="admissions">
       <h2>Admissions</h2>
-      <div class="meta" id="meta-admissions">Called: — &nbsp; Waiting: 0</div>
-      <div id="list-admissions"></div>
+      <div class="meta" id="meta-admissions">Called: —  Waiting: 0</div>
+      <div id="called-admissions"></div>
+      <div class="waiting-list" id="list-admissions"></div>
     </div>
 
     <div class="col" data-service="records">
       <h2>Records</h2>
-      <div class="meta" id="meta-records">Called: — &nbsp; Waiting: 0</div>
-      <div id="list-records"></div>
+      <div class="meta" id="meta-records">Called: —  Waiting: 0</div>
+      <div id="called-records"></div>
+      <div class="waiting-list" id="list-records"></div>
     </div>
   </div>
 
-<script>
-const API = window.location.origin;
-const SERVICES = ['registrar','cashier','admissions','records'];
+  <div id="debug">Debug messages will appear here</div>
 
-// Utility to render slot HTML
-function renderSlot(ticket, displayToken) {
-  const tokenText = displayToken || (ticket.token ? ticket.token : String(ticket.id).padStart(3,'0'));
-  const quer = ticket.quer_type || '';
-  return `
-    <div class="slot" data-id="${ticket.id}" data-service="${ticket.called_service || ''}">
-      <div class="token">${tokenText}</div>
+<script>
+    let API = window.location.origin; // http://localhost:4000 API Doesn't return json???? it returns html???? wtf (fix issue since display will not work)
+                                      // but it worked on kiosk so idk and worked the first time before i changed something probably fucked up json parse
+                                      // logic when fetching /queue
+    if (window.location.port === '5173') API = 'http://localhost:4000';
+
+const SERVICES = ['registrar','cashier','admissions','records'];
+const debugBox = document.getElementById('debug');
+function dbg(msg){ const p = document.createElement('div'); p.textContent = new Date().toLocaleTimeString() + ' — ' + msg; debugBox.insertBefore(p, debugBox.firstChild); console.log('[display]',msg); }
+
+/* helper: ensure services field is an array */
+function parseServicesField(s) {
+  if (!s) return [];
+  if (Array.isArray(s)) return s;
+  try {
+    const parsed = JSON.parse(s);
+    if (Array.isArray(parsed)) return parsed;
+  } catch(e){}
+  // fallback: comma separated string
+  if (typeof s === 'string') return s.split(',').map(x => x.trim()).filter(Boolean);
+  return [];
+}
+
+/* Render helpers */
+function renderCalled(ticket, service) {
+  const prefix = { registrar:'R', cashier:'C', admissions:'A', records:'D' }[service] || '';
+  const tokenText = prefix + String(ticket.id).padStart(3,'0');
+  const html = `
+    <div class="called">
+      <div class="token-big">${tokenText}</div>
       <div class="info">
-        <div class="name">${ticket.name || 'Guest'} <span style="font-size:14px;color:#7fa0c8"> ${quer ? '('+quer+')' : ''}</span></div>
-        <div class="type small">${ticket.status || ''}</div>
+        <div class="name">${ticket.name || 'Guest'}</div>
+        <div class="type">${ticket.quer_type || ''} • ${ticket.status || ''}</div>
       </div>
     </div>`;
+  return html;
+}
+function renderWaitingLine(ticket) {
+  const id = String(ticket.id).padStart(3,'0');
+  const name = ticket.name || '';
+  const type = ticket.quer_type || '';
+  return `<div class="wait-item" data-id="${ticket.id}"><div class="wait-left"><div class="wait-id">${id}</div><div><div class="wait-name">${name}</div><div class="wait-type">${type}</div></div></div><div class="small">${ticket.status}</div></div>`;
 }
 
-// Keep an in-memory map of called tokens per service for quick UI update
-const state = {
-  // service -> { called: tokenString or null, waitingCount }
-};
+/* Main render: accepts array of ticket objects from /queue */
+function renderQueue(arr) {
+  // clear all columns
+  SERVICES.forEach(s => {
+    document.getElementById('called-' + s).innerHTML = '';
+    document.getElementById('list-' + s).innerHTML = '';
+    document.getElementById('meta-' + s).textContent = 'Called: —  Waiting: 0';
+  });
 
-// initialize state
-SERVICES.forEach(s => state[s] = { called: null, waiting: 0 });
+  // compute waiting counts and display called items
+  const waitingCounts = { registrar:0, cashier:0, admissions:0, records:0 };
 
-// fetch full queue and rebuild UI (fallback)
-async function fetchQueue() {
-  try {
-    const resp = await fetch(API + '/queue');
-    const arr = await resp.json();
-    // compute per-service waiting counts and called tokens
-    const waitingMap = {};
-    SERVICES.forEach(s => waitingMap[s]=0);
-
-    // clear lists first
-    SERVICES.forEach(s => {
-      document.getElementById('list-' + s).innerHTML = '';
-      state[s].called = null;
-    });
-
-    for (const t of arr) {
-      // ensure services parsed
-      let sv = [];
-      try { sv = JSON.parse(t.services || '[]'); } catch(e) { sv = []; }
-      // count waiting for each service
-      if (t.status === 'waiting') {
-        sv.forEach(s => waitingMap[s] = (waitingMap[s]||0)+1);
-      }
-      // if called, display on called_service only
-      if (t.status === 'called' && t.called_service) {
-        const s = t.called_service;
-        const prefix = {
-          registrar: 'R', cashier: 'C', admissions: 'A', records: 'D'
-        }[s] || '';
-        const displayToken = prefix + String(t.id).padStart(3,'0');
-        state[s].called = displayToken;
-        // append called ticket at top for that service
-        const container = document.getElementById('list-' + s);
-        if (container) container.innerHTML = renderSlot(t, displayToken) + container.innerHTML;
-      } else if (t.status === 'waiting') {
-        // append waiting entries under the service column as compact lines
-        sv.forEach(s => {
-          const container = document.getElementById('list-' + s);
-          if (!container) return;
-          const el = document.createElement('div');
-          el.className = 'slot';
-          el.innerHTML = `<div style="width:64px;font-weight:700">${String(t.id).padStart(3,'0')}</div><div style="padding-left:8px">${t.name || ''} <div class="small" style="color:#9aa">${t.status}</div></div>`;
-          container.appendChild(el);
-        });
-      }
+  // 1) display called tickets (only on their called_service)
+  arr.forEach(t => {
+    if (t.status === 'called' && t.called_service) {
+      const s = t.called_service;
+      const container = document.getElementById('called-' + s);
+      if (container) container.insertAdjacentHTML('beforeend', renderCalled(t, s));
     }
+  });
 
-    // update meta
-    SERVICES.forEach(s => {
-      const meta = document.getElementById('meta-' + s);
-      meta.textContent = `Called: ${state[s].called || '—'}  Waiting: ${waitingMap[s] || 0}`;
+  // 2) display waiting tickets under each service they signed for
+    arr.forEach(t => {
+    // if this ticket is already called by any service, skip it entirely for waiting
+    if (t.status === 'called' && t.called_service) return;
+
+    if (t.status === 'waiting') {
+        const services = parseServicesField(t.services);
+        services.forEach(s => {
+        // skip if another service already called this ticket
+        if (t.called_service && t.called_service !== s) return;
+        const container = document.getElementById('list-' + s);
+        if (!container) return;
+        container.insertAdjacentHTML('beforeend', renderWaitingLine(t));
+        waitingCounts[s] = (waitingCounts[s] || 0) + 1;
+        });
+    }
     });
 
-  } catch (e) {
-    console.error('fetchQueue error', e);
+  // update meta
+  SERVICES.forEach(s => {
+    const calledEl = document.querySelector(`#called-${s} .token-big`);
+    const calledText = calledEl ? calledEl.textContent : '—';
+    document.getElementById('meta-' + s).textContent = `Called: ${calledText}  Waiting: ${waitingCounts[s] || 0}`;
+  });
+}
+
+/* Fetch queue robustly and render */
+async function fetchQueue() {
+  dbg('Fetching ' + API + '/queue');
+  try {
+    const resp = await fetch(API + '/queue', { cache: 'no-store' });
+    const text = await resp.text();
+    if (!resp.ok) {
+      dbg('HTTP ' + resp.status + ' from /queue');
+      dbg(text.slice(0,300));
+      return;
+    }
+    // ensure it parsed as JSON, quick fix for issue where it returns html, but might break other stuff? maybe not idk hope nalang
+    let arr;
+    try { arr = JSON.parse(text); }
+    catch(e) { dbg('Parse error: /queue returned non-JSON (snippet): ' + text.slice(0,200)); return; }
+    if (!Array.isArray(arr)) { dbg('/queue returned non-array JSON'); return; }
+    renderQueue(arr);
+    dbg('Rendered ' + arr.length + ' tickets');
+  } catch (err) {
+    dbg('Network error fetching /queue: ' + err);
   }
 }
 
-// SSE setup
-let es;
-function startSSE() {
+/* SSE connection for live updates, fallback to polling */
+let es, poll;
+function startSSE(){
   try {
     es = new EventSource(API + '/events');
-    es.addEventListener('created', ev => fetchQueue());
-    es.addEventListener('called', ev => {
-      const d = JSON.parse(ev.data);
-      // clear existing display for that service and show new called token only
-      const s = d.service;
-      const container = document.getElementById('list-' + s);
-      if (!container) return;
-      container.innerHTML = renderSlot(d, d.displayToken || d.token) + ''; // show called on top
-      // update meta
-      const meta = document.getElementById('meta-' + s);
-      meta.textContent = `Called: ${d.displayToken || '—'} Waiting: (updated)`;
+    es.onopen = () => dbg('SSE open');
+    es.onmessage = e => { dbg('SSE message'); fetchQueue(); };
+    ['created','called','served','deleted','hold','recalled'].forEach(ev => {
+      es.addEventListener(ev, e => { dbg('SSE event: ' + ev + ' payload: ' + e.data); fetchQueue(); });
     });
-    es.addEventListener('served', ev => {
-      const d = JSON.parse(ev.data);
-      // remove from service column where it was called
-      // best approach: re-fetch queue to be safe
-      fetchQueue();
-    });
-    es.addEventListener('deleted', ev => fetchQueue());
-    es.addEventListener('hold', ev => fetchQueue());
-    es.addEventListener('recalled', ev => fetchQueue());
-    es.onerror = (err) => {
-      console.warn('SSE error, falling back to polling', err);
-      if (es) es.close();
-      es = null;
-      // start polling if SSE fails
-      startPolling();
-    };
-  } catch (e) {
-    console.error('SSE start failed', e);
-    startPolling();
-  }
+    es.onerror = err => { dbg('SSE error, fallback to polling'); if(es) es.close(); startPolling(); };
+  } catch(e) { dbg('SSE start failed: ' + e); startPolling(); }
 }
+function startPolling(){ if(poll) clearInterval(poll); fetchQueue(); poll = setInterval(fetchQueue, 4000); }
 
-let pollingInterval;
-function startPolling(){
-  if (pollingInterval) clearInterval(pollingInterval);
-  fetchQueue();
-  pollingInterval = setInterval(fetchQueue, 5000);
-}
-
-// init
+/* init */
 fetchQueue();
 startSSE();
 </script>
