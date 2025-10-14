@@ -3,6 +3,11 @@ import './display.css';
 const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const STAFF_KEY = import.meta.env.VITE_STAFF_KEY || 'STI-QUEUE-KEY';
 
+async function safeJson(res) {
+  try { return await res.json(); }
+  catch (e) { return { _parseError: true, text: await (res.text().catch(()=>'')) }; }
+}
+
 const AVAILABLE_SERVICES = [
   { key: 'registrar', label: 'Registrar' },
   { key: 'cashier', label: 'Cashier' },
@@ -95,73 +100,105 @@ export default function App(){
     } catch (e) { console.error(e); alert('Network error'); }
   }
 
-  async function callNext(service) {
+  // call next (staff)
+async function callNext(service) {
   try {
     const r = await fetch(`${API}/next`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-staff-key': STAFF_KEY },
       body: JSON.stringify({ service })
     });
-    const data = await r.json();
+    const data = await safeJson(r);
     if (!r.ok) {
-      alert('Call next failed: ' + (data.error || JSON.stringify(data)));
-    } else {
-      // Optionally notify staff UI
-      console.log('callNext:', data);
+      console.error('callNext error', data);
+      alert('Call Next failed: ' + (data.error || data.text || r.statusText));
+      return;
     }
-    // refresh local queue & stats
+    // success
+    console.log('callNext ok', data);
     fetchQueue(); fetchStats();
-  } catch (e) {
-    console.error('callNext error', e);
+  } catch (err) {
+    console.error('callNext network', err);
     alert('Network error calling next');
   }
 }
 
+// serve (staff)
 async function serve(id) {
   try {
     const r = await fetch(`${API}/serve/${id}`, {
       method: 'POST',
       headers: { 'x-staff-key': STAFF_KEY }
     });
-    const data = r.ok ? await r.json().catch(()=>({ok:true})) : await r.json().catch(()=>({error:'unknown'}));
+    const data = await safeJson(r);
     if (!r.ok) {
-      alert('Serve failed: ' + (data.error || JSON.stringify(data)));
-    } else {
-      // update UI
-      fetchQueue(); fetchStats();
+      console.error('serve error', data);
+      alert('Serve failed: ' + (data.error || data.text || r.statusText));
+      return;
     }
-  } catch (e) {
-    console.error('serve error', e);
+    fetchQueue(); fetchStats();
+  } catch (err) {
+    console.error('serve network', err);
     alert('Network error serving ticket');
   }
 }
 
+// hold (staff)
 async function hold(id) {
   try {
     const r = await fetch(`${API}/hold/${id}`, {
       method: 'POST',
-      headers: {'x-staff-key': STAFF_KEY}
+      headers: { 'x-staff-key': STAFF_KEY }
     });
-    if (!r.ok) alert('Hold failed');
+    const data = await safeJson(r);
+    if (!r.ok) {
+      alert('Hold failed: ' + (data.error || data.text || r.statusText));
+      return;
+    }
     fetchQueue(); fetchStats();
-  } catch (e) { console.error(e); alert('Network error'); }
+  } catch (err) {
+    console.error('hold error', err);
+    alert('Network error');
+  }
 }
-async function recall(id){ await fetch(`${API}/recall/${id}`, { method:'POST' }); fetchQueue(); fetchStats(); }
 
-async function deleteTicket(id){
-  if(!confirm('Delete this ticket?')) return;
+// recall (staff)
+async function recall(id) {
+  try {
+    const r = await fetch(`${API}/recall/${id}`, {
+      method: 'POST',
+      headers: { 'x-staff-key': STAFF_KEY }
+    });
+    const data = await safeJson(r);
+    if (!r.ok) {
+      alert('Recall failed: ' + (data.error || data.text || r.statusText));
+      return;
+    }
+    fetchQueue(); fetchStats();
+  } catch (err) {
+    console.error('recall error', err);
+    alert('Network error recalling ticket');
+  }
+}
+
+// delete (staff)
+async function deleteTicket(id) {
+  if (!confirm('Delete this ticket?')) return;
   try {
     const r = await fetch(`${API}/ticket/${id}`, {
       method: 'DELETE',
-      headers: {'x-staff-key': STAFF_KEY}
+      headers: { 'x-staff-key': STAFF_KEY }
     });
+    const data = await safeJson(r);
     if (!r.ok) {
-      const txt = await r.text();
-      alert('Failed: ' + txt);
-    } else {
-      fetchQueue(); fetchStats();
+      alert('Delete failed: ' + (data.error || data.text || r.statusText));
+      return;
     }
-  } catch (e) { console.error(e); alert('Network error'); }
+    fetchQueue(); fetchStats();
+  } catch (err) {
+    console.error('delete error', err);
+    alert('Network error');
+  }
 }
 
   function toggleService(serviceKey){
