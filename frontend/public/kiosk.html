@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Take a Token</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;padding:18px;background:#fff}
+    .card{max-width:420px;margin:12px auto;padding:16px;border-radius:8px;border:1px solid #ddd}
+    label{display:block;margin:8px 0 4px}
+    input[type=text],select{width:100%;padding:8px;border:1px solid #ccc;border-radius:6px}
+    .btn{display:inline-block;padding:10px 14px;border-radius:8px;background:#ffd100;border:none;font-weight:700;color:#0b4ea2;width:100%;margin-top:12px}
+    .token{margin-top:12px;padding:10px;background:#f6f6f6;border-radius:6px;font-weight:700}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Take a Token</h2>
+    <label>Your name (optional)</label>
+    <input id="name" type="text" placeholder="Your name">
+
+    <label>Select service(s)</label>
+    <label><input type="checkbox" value="registrar" checked> Registrar</label>
+    <label><input type="checkbox" value="cashier"> Cashier</label>
+    <label><input type="checkbox" value="admissions"> Admissions</label>
+    <label><input type="checkbox" value="records"> Records</label>
+
+    <label>Type of quer</label>
+    <select id="quer">
+      <option>Student</option>
+      <option>Faculty/Staff</option>
+      <option>Visitor</option>
+      <option>Other</option>
+    </select>
+
+    <button id="get" class="btn">Get Token</button>
+
+    <div id="result" class="token" style="display:none"></div>
+  </div>
+
+<script>
+const API = window.location.origin;
+
+document.getElementById('get').addEventListener('click', async () => {
+  const name = document.getElementById('name').value.trim();
+  const checks = Array.from(document.querySelectorAll('input[type=checkbox]:checked')).map(i=>i.value);
+  const quer = document.getElementById('quer').value;
+  if (!checks.length) { alert('Please select a service'); return; }
+  // disable while creating
+  const btn = document.getElementById('get');
+  btn.disabled = true; btn.style.opacity = 0.6;
+  try {
+    const resp = await fetch(API + '/ticket', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name, services: checks, quer_type: quer })
+    });
+    const d = await resp.json();
+    if (!resp.ok) {
+      alert(d.error || 'Failed to create token');
+    } else {
+      document.getElementById('result').style.display='block';
+      document.getElementById('result').textContent = `Your token: ${String(d.id).padStart(3,'0')} — Type: ${d.quer_type} — Services: ${d.services.join(', ')}`;
+    }
+  } catch (e) {
+    console.error('kiosk error', e);
+    alert('Network error creating token');
+  } finally {
+    btn.disabled = false; btn.style.opacity = 1;
+  }
+});
+</script>
+</body>
+</html>
