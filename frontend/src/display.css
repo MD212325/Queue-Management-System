@@ -1,0 +1,245 @@
+:root{
+  blue: #0b4ea2;    /* primary blue */
+  dark: #08294d;    /* dark navy for cards */
+  yellow: #ffd100;  /* bright yellow accent */
+  --muted: #f2f4f7;       /* page background / light */
+  --card-bg: #0f2440;     /* inner card background */
+  --text-light: #ffffff;
+  --text-dark: #1b1b1b;
+  --btn-height: 36px;
+  --btn-radius: 8px;
+  --action-width: 96px;   /* width for vertical action buttons */
+}
+
+/* Page */
+body {
+  margin: 18px 24px;
+  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--muted);
+  color: #111;
+}
+
+/* Big heading */
+h1 {
+  color: var(dark);
+  font-size: 36px;
+  margin: 6px 0 18px 0;
+  font-weight: 700;
+}
+
+/* Main layout: left ticket panel + service cards row */
+.app-wrap {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+/* Left ticket box */
+.ticket-panel {
+  width: 300px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 6px 18px rgba(5,9,20,0.06);
+  border: 1px solid rgba(6,10,20,0.06);
+}
+
+.ticket-panel h2 {
+  margin: 0 0 10px 0;
+  color: var(dark);
+}
+
+.ticket-panel input[type="text"], 
+.ticket-panel select {
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(10,10,10,0.08);
+  box-sizing: border-box;
+  font-size: 14px;
+}
+
+/* Primary full-width button (Get Token, Call Next on top of card) */
+.btn {
+  display: inline-block;
+  height: var(--btn-height);
+  min-height: var(--btn-height);
+  padding: 0 12px;
+  border-radius: var(--btn-radius);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: center;
+  border: none;
+  line-height: var(--btn-height);
+}
+
+/* Primary accent: yellow call buttons */
+.btn-primary {
+  background: linear-gradient(180deg,var(yellow), #f6c400);
+  color: var(dark);
+  box-shadow: 0 4px 8px rgba(11,78,162,0.06);
+}
+
+/* Secondary: blue action buttons */
+.btn-blue {
+  background: linear-gradient(180deg,var(blue), var(dark));
+  color: var(--text-light);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.16);
+}
+
+/* Danger */
+.btn-danger {
+  background: #c62b2b;
+  color: #fff;
+}
+
+/* Make the primary "Call Next" and "Get Token" buttons full width in their containers */
+.ticket-panel .btn,
+.service-card > .btn {
+  width: 100%;
+}
+
+/* Service cards grid */
+.service-grid {
+  display:flex;
+  gap: 20px;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+/* Card base */
+.service-card {
+  flex: 0 0 360px;       /* fixed card width */
+  min-width: 320px;
+  background: var(--card-bg);
+  color: var(--text-light);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 8px 20px rgba(3,8,20,0.12);
+  border: 1px solid rgba(255,255,255,0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Card header with thin yellow stripe */
+.service-card .card-head {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background: linear-gradient(90deg, rgba(0,0,0,0.18), rgba(0,0,0,0.12));
+  padding: 8px;
+  border-radius: 6px;
+  position: relative;
+  font-weight:700;
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+  font-size:13px;
+}
+
+/* yellow bar under header */
+.service-card .card-head::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -8px;
+  height: 6px;
+  background: var(yellow);
+  border-radius: 4px;
+  opacity: 0.98;
+  transform: translateY(6px);
+}
+
+/* table styling inside card */
+.service-card table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: #eee;
+  margin-top: 6px;
+}
+
+.service-card thead th {
+  font-size: 12px;
+  text-align: left;
+  padding: 8px 6px;
+  color: #fff;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.service-card tbody td {
+  padding: 8px 6px;
+  font-size: 13px;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Column widths */
+.service-card td:nth-child(1) { width: 64px; }  /* token */
+.service-card td:nth-child(2) { width: 120px; } /* name */
+.service-card td:nth-child(3) { width: 86px; }  /* type */
+.service-card td:nth-child(4) { width: 86px; }  /* status */
+.service-card td:nth-child(5) { width: 100px; } /* actions */
+
+/* Actions column: vertical stacked buttons with uniform size */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+/* Action buttons uniform width */
+.actions button,
+.service-card .small-btn {
+  width: var(--action-width);
+  height: var(--btn-height);
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+/* small blue action */
+.actions button {
+  background: linear-gradient(180deg,var(blue), var(dark));
+  color: white;
+  border: none;
+}
+
+/* delete button override */
+.actions button.delete {
+  background: #c62b2b;
+}
+
+/* Ensure primary call area button stands out */
+.service-card > .btn {
+  margin-top: 6px;
+  background: var(yellow);
+  color: var(dark);
+  font-weight: 700;
+}
+
+/* Make forms and checkboxes neat in ticket panel */
+.ticket-panel label { display:block; margin-bottom:6px; font-size:14px; color:#222; }
+.ticket-panel .stats { margin-top:14px; color:#222; font-weight:600; }
+
+/* Footer / small text */
+.small {
+  font-size: 12px;
+  color: rgba(0,0,0,0.6);
+}
+
+/* responsive tweak */
+@media (max-width: 980px) {
+  .app-wrap { flex-direction: column; }
+  .ticket-panel { width: 100%; }
+  .service-card { flex: 1 1 auto; min-width: 280px; }
+}
