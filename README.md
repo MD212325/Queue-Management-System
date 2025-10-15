@@ -57,6 +57,7 @@ The production files will be in the `dist/` folder.
 queue-display-system/
 ├── display.html       # Main display screen
 ├── display.css        # Styling for display
+├── kiosk.html         # Main kiosk screen for quers
 ├── src/               # React source files
 ├── public/            # Static assets
 ├── package.json       # Dependencies & scripts
