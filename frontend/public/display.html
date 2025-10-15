@@ -42,10 +42,10 @@
   <div id="debug">Debug messages will appear here</div>
 
 <script>
-    let API = window.location.origin; // http://localhost:4000 API Doesn't return json???? it returns html???? wtf (fix issue since display will not work)
+    let API = 'http://192.168.18.34:4000'; // http://localhost:4000 API Doesn't return json???? it returns html???? wtf (fix issue since display will not work)
                                       // but it worked on kiosk so idk and worked the first time before i changed something probably fucked up json parse
                                       // logic when fetching /queue
-    if (window.location.port === '5173') API = 'http://localhost:4000';
+    if (window.location.port === '5173') API = 'http://192.168.18.34:4000';
 
 const SERVICES = ['registrar','cashier','admissions','records'];
 const debugBox = document.getElementById('debug');
@@ -169,6 +169,19 @@ function startSSE(){
   } catch(e) { dbg('SSE start failed: ' + e); startPolling(); }
 }
 function startPolling(){ if(poll) clearInterval(poll); fetchQueue(); poll = setInterval(fetchQueue, 4000); }
+
+es = new EventSource(API + '/events');
+es.onopen = () => dbg('SSE open');
+es.onmessage = e => { dbg('SSE message'); fetchQueue(); };
+
+// <<< add these listeners here >>>
+es.addEventListener('served', e => { console.log('served event', e.data); fetchQueue(); });
+es.addEventListener('moved',  e => { console.log('moved event',  e.data); fetchQueue(); });
+
+// (existing named event listeners can remain)
+['created','called','deleted','reassigned'].forEach(ev =>
+  es.addEventListener(ev, e => { dbg('SSE ' + ev + ' ' + e.data); fetchQueue(); })
+);
 
 /* init */
 fetchQueue();
