@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import './display.css';
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API = import.meta.env.VITE_API_URL || 'http://192.168.18.34:4000';
 const STAFF_KEY = import.meta.env.VITE_STAFF_KEY || 'STI-QUEUE-KEY';
 
 async function safeJson(res) {
@@ -17,50 +17,85 @@ const AVAILABLE_SERVICES = [
 
 const QUER_TYPES = ['Student','Faculty/Staff','Visitor','Other'];
 
+/* ---------- ServiceTable component (renders a single service column) ---------- */
 function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, onCallNext }) {
-  const filtered = tickets.filter(t => (t.services || []).includes(service));
+  // IMPORTANT: only show tickets whose current_service equals this column
+  const visible = tickets.filter(t => t.current_service === service);
+
+  // If there's a called ticket for this service, show it in the "called" slot
+  const called = tickets.find(t => t.status === 'called' && t.called_service === service);
+
   return (
     <div className="service-card" style={{
-      flex:1, minWidth:260, margin:10, padding:10, border:'1px solid #ddd', borderRadius:6
+      flex:1, minWidth:260, margin:10, padding:10, borderRadius:6, background:'#0f2940', color:'#fff', boxShadow:'0 6px 16px rgba(0,0,0,0.2)'
     }}>
-      <h3 style={{textAlign:'center'}}>{service.toUpperCase()}</h3>
-      <button style={{ width:'100%', marginBottom:8 }} onClick={() => onCallNext(service)}>
+      <h3 style={{textAlign:'center', margin:0, padding:8, fontSize:16, letterSpacing:1}}>{service.toUpperCase()}</h3>
+      <button style={{ width:'100%', margin:'10px 0' }} onClick={() => onCallNext(service)}>
         Call Next ({service})
       </button>
 
+      {/* Called token (prominent) */}
+      {called ? (
+        <div style={{
+          background:'#111', padding:16, marginBottom:12, borderRadius:6, display:'flex', alignItems:'center', gap:12
+        }}>
+          <div style={{fontSize:56, fontWeight:700, lineHeight:1}}>{called.displayToken || String(called.id).padStart(3,'0')}</div>
+          <div>
+            <div style={{fontSize:18, fontWeight:600}}>{called.name || 'No name'}</div>
+            <div style={{fontSize:12, color:'#ddd'}}>{called.quer_type || ''}</div>
+            <div style={{marginTop:8}}>
+              {/* Serve shown only if actually called at this service */}
+              <button onClick={() => onServe(called.id, service)} style={{marginRight:6}}>Serve</button>
+              <button onClick={() => onHold(called.id)} style={{marginRight:6}}>Hold</button>
+              <button onClick={() => onDelete(called.id)} className="delete">Delete</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Waiting list table */}
       <table style={{ width:'100%', borderCollapse:'collapse' }}>
         <thead>
-          <tr style={{ background:'#f6f6f6' }}>
-            <th style={{padding:6}}>Token</th>
-            <th style={{padding:6}}>Name</th>
-            <th style={{padding:6}}>Type</th>
-            <th style={{padding:6}}>Status</th>
-            <th style={{padding:6}}>Actions</th>
+          <tr style={{ background:'#2b3b4a' }}>
+            <th style={{padding:6, textAlign:'left'}}>Token</th>
+            <th style={{padding:6, textAlign:'left'}}>Name</th>
+            <th style={{padding:6, textAlign:'left'}}>Type</th>
+            <th style={{padding:6, textAlign:'left'}}>Status</th>
+            <th style={{padding:6, textAlign:'left'}}>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {filtered.map(q => (
-            <tr key={q.id}>
-              <td style={{padding:6}}>{String(q.id).padStart(3,'0')}</td>
-              <td style={{padding:6}}>{q.name}</td>
-              <td style={{padding:6}}>{q.quer_type}</td>
-              <td style={{padding:6}}>{q.status}{q.called_service ? ` (${q.called_service})` : ''}</td>
-              <td style={{padding:6}}>
-                <div className="actions">
-                  {q.status !== 'served' && <button onClick={() => onServe(q.id)}>Serve</button>}
-                  {q.status !== 'hold' && <button onClick={() => onHold(q.id)}>Hold</button>}
-                  {q.status === 'hold' && <button onClick={() => onRecall(q.id)}>Recall</button>}
-                  <button className="delete" onClick={() => onDelete(q.id)}>Delete</button>
-                </div>
-              </td>
-            </tr>
-          ))}
+          {visible.map(q => {
+            // hide the called token from the table if it's already rendered above
+            if (called && called.id === q.id) return null;
+            return (
+              <tr key={q.id}>
+                <td style={{padding:6}}>{q.displayToken || String(q.id).padStart(3,'0')}</td>
+                <td style={{padding:6}}>{q.name || '—'}</td>
+                <td style={{padding:6}}>{q.quer_type || '—'}</td>
+                <td style={{padding:6}}>
+                  {q.status === 'called' ? `Called (${q.called_service})` : q.status}
+                  <div style={{fontSize:11, color:'#cfe6ff'}}>Progress: {Number(q.service_index || 0) + 1}/{(q.services || []).length} — {(q.services || []).join(' → ')}</div>
+                </td>
+                <td style={{padding:6}}>
+                  <div className="actions">
+                    {/* Serve should only appear if the ticket is called at THIS service */}
+                    {q.status === 'called' && q.called_service === service && <button onClick={() => onServe(q.id, service)}>Serve</button>}
+                    {q.status !== 'hold' && <button onClick={() => onHold(q.id)}>Hold</button>}
+                    {q.status === 'hold' && <button onClick={() => onRecall(q.id)}>Recall</button>}
+                    <button className="delete" onClick={() => onDelete(q.id)}>Delete</button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
+/* --------------------------- Main App component --------------------------- */
 export default function App(){
   const [queue, setQueue] = useState([]);
   const [name, setName] = useState('');
@@ -71,15 +106,39 @@ export default function App(){
   useEffect(() => {
     fetchQueue(); fetchStats();
     const es = new EventSource(`${API}/events`);
-    ['created','called','served','hold','recalled','deleted'].forEach(evt =>
+    // listen to all relevant events (including 'moved' and 'reassigned')
+    ['created','called','served','moved','reassigned','hold','recalled','deleted'].forEach(evt =>
       es.addEventListener(evt, () => { fetchQueue(); fetchStats(); })
     );
+    es.onerror = (e) => {
+      // SSE fallback: reload periodically via polling already handled by fetchQueue timers if desired
+      console.warn('SSE error', e);
+    };
     return () => es.close();
   }, []);
 
-  function fetchQueue(){ fetch(`${API}/queue`).then(r=>r.json()).then(setQueue).catch(console.error) }
-  function fetchStats(){ fetch(`${API}/stats`).then(r=>r.json()).then(setStats).catch(console.error) }
+  async function fetchQueue(){
+    try {
+      const r = await fetch(`${API}/queue`);
+      const data = await safeJson(r);
+      if (!r.ok) { console.error('fetchQueue error', data); return; }
+      setQueue(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error('fetchQueue network', e);
+    }
+  }
+  async function fetchStats(){
+    try {
+      const r = await fetch(`${API}/stats`);
+      const data = await safeJson(r);
+      if (!r.ok) { console.error('fetchStats error', data); return; }
+      setStats(data);
+    } catch (e) {
+      console.error('fetchStats network', e);
+    }
+  }
 
+  /* -------- kiosk: create ticket -------- */
   async function takeTicket(){
     if (!Array.isArray(selectedServices) || selectedServices.length === 0) {
       return alert('Select at least one service.');
@@ -92,121 +151,109 @@ export default function App(){
           name, services: selectedServices, quer_type: querType
         })
       });
-      const data = await res.json();
-      if(!res.ok) return alert('Failed to take ticket: ' + (data.error || res.statusText));
+      const data = await safeJson(res);
+      if (!res.ok) return alert('Failed to take ticket: ' + (data.error || data.text || res.statusText));
       alert(`Your token: ${String(data.id).padStart(3,'0')} (Services: ${data.services.join(', ')})`);
       setName(''); setSelectedServices(['registrar']); setQuerType(QUER_TYPES[0]);
       fetchQueue(); fetchStats();
     } catch (e) { console.error(e); alert('Network error'); }
   }
 
-  // call next (staff)
-async function callNext(service) {
-  try {
-    const r = await fetch(`${API}/next`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-staff-key': STAFF_KEY },
-      body: JSON.stringify({ service })
-    });
-    const data = await safeJson(r);
-    if (!r.ok) {
-      console.error('callNext error', data);
-      alert('Call Next failed: ' + (data.error || data.text || r.statusText));
-      return;
-    }
-    // success
-    console.log('callNext ok', data);
-    fetchQueue(); fetchStats();
-  } catch (err) {
-    console.error('callNext network', err);
-    alert('Network error calling next');
+  /* -------- staff actions -------- */
+  async function callNext(service) {
+    try {
+      const r = await fetch(`${API}/next`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-staff-key': STAFF_KEY },
+        body: JSON.stringify({ service })
+      });
+      const data = await safeJson(r);
+      if (!r.ok) { alert('Call Next failed: ' + (data.error || data.text || r.statusText)); return; }
+      fetchQueue(); fetchStats();
+    } catch (err) { console.error('callNext network', err); alert('Network error'); }
   }
-}
 
-// serve (staff)
-async function serve(id) {
-  try {
-    const r = await fetch(`${API}/serve/${id}`, {
-      method: 'POST',
-      headers: { 'x-staff-key': STAFF_KEY }
-    });
-    const data = await safeJson(r);
-    if (!r.ok) {
-      console.error('serve error', data);
-      alert('Serve failed: ' + (data.error || data.text || r.statusText));
-      return;
-    }
-    fetchQueue(); fetchStats();
-  } catch (err) {
-    console.error('serve network', err);
-    alert('Network error serving ticket');
+  async function serve(id, service) {
+    try {
+      if (!service) { alert('service missing'); return; }
+      const res = await fetch(`${API}/serve/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-staff-key': STAFF_KEY },
+        body: JSON.stringify({ service })
+      });
+      const payload = await safeJson(res);
+      if (!res.ok) { alert('Cannot serve: ' + (payload.error || payload.text || res.statusText)); return; }
+      // successful serve (either moved or completed)
+      fetchQueue(); fetchStats();
+    } catch (e) { console.error('serve network', e); alert('Network error'); }
   }
-}
 
-// hold (staff)
-async function hold(id) {
-  try {
-    const r = await fetch(`${API}/hold/${id}`, {
-      method: 'POST',
-      headers: { 'x-staff-key': STAFF_KEY }
-    });
-    const data = await safeJson(r);
-    if (!r.ok) {
-      alert('Hold failed: ' + (data.error || data.text || r.statusText));
-      return;
-    }
-    fetchQueue(); fetchStats();
-  } catch (err) {
-    console.error('hold error', err);
-    alert('Network error');
+  async function hold(id) {
+    try {
+      const r = await fetch(`${API}/hold/${id}`, {
+        method: 'POST',
+        headers: { 'x-staff-key': STAFF_KEY }
+      });
+      const data = await safeJson(r);
+      if (!r.ok) { alert('Hold failed: ' + (data.error || data.text || r.statusText)); return; }
+      fetchQueue(); fetchStats();
+    } catch (err) { console.error('hold error', err); alert('Network error'); }
   }
-}
 
-// recall (staff)
-async function recall(id) {
-  try {
-    const r = await fetch(`${API}/recall/${id}`, {
-      method: 'POST',
-      headers: { 'x-staff-key': STAFF_KEY }
-    });
-    const data = await safeJson(r);
-    if (!r.ok) {
-      alert('Recall failed: ' + (data.error || data.text || r.statusText));
-      return;
-    }
-    fetchQueue(); fetchStats();
-  } catch (err) {
-    console.error('recall error', err);
-    alert('Network error recalling ticket');
+  async function recall(id) {
+    try {
+      const r = await fetch(`${API}/recall/${id}`, {
+        method: 'POST',
+        headers: { 'x-staff-key': STAFF_KEY }
+      });
+      const data = await safeJson(r);
+      if (!r.ok) { alert('Recall failed: ' + (data.error || data.text || r.statusText)); return; }
+      fetchQueue(); fetchStats();
+    } catch (err) { console.error('recall error', err); alert('Network error recalling ticket'); }
   }
-}
 
-// delete (staff)
-async function deleteTicket(id) {
-  if (!confirm('Delete this ticket?')) return;
-  try {
-    const r = await fetch(`${API}/ticket/${id}`, {
-      method: 'DELETE',
-      headers: { 'x-staff-key': STAFF_KEY }
-    });
-    const data = await safeJson(r);
-    if (!r.ok) {
-      alert('Delete failed: ' + (data.error || data.text || r.statusText));
-      return;
-    }
-    fetchQueue(); fetchStats();
-  } catch (err) {
-    console.error('delete error', err);
-    alert('Network error');
-  }
-}
+  async function deleteTicket(id) {
+    if (!confirm('Delete this ticket?')) return;
+    try {
+        const url = `${API}/ticket/${id}`;
+        console.log('DELETE', url);
+        const res = await fetch(url, {
+        method: 'DELETE',
+        headers: { 'x-staff-key': STAFF_KEY }
+        });
+        const text = await res.text().catch(()=>'');
 
-  function toggleService(serviceKey){
-    setSelectedServices(prev => {
-      if(prev.includes(serviceKey)) return prev.filter(s=>s!==serviceKey);
-      return [...prev, serviceKey];
-    });
-  }
+        if (res.ok) {
+        alert('Deleted');                                           // won't delete because it returns html??
+        fetchQueue(); fetchStats();                                 // same problem with the json parse logic in server.js this time might be caused by the fetch api
+        return;                                                     // just forgot to restart the server after changing the code 8) problem fixed!
+        }
+        // if 404 or otherwise, show server response and try fallback
+        console.warn('DELETE failed', res.status, text);
+        const fallbackUrl = `${API}/ticket/${id}/delete`;
+        console.log('Trying fallback POST', fallbackUrl);
+        const r2 = await fetch(fallbackUrl, {
+        method: 'POST',
+        headers: { 'x-staff-key': STAFF_KEY }
+        });
+        const t2 = await r2.text().catch(()=>'');
+        if (r2.ok) {
+        alert('Deleted (fallback)');
+        fetchQueue(); fetchStats();
+        return;
+        }
+        alert('Delete failed: ' + (t2 || res.statusText || res.status));
+    } catch (err) {
+        console.error('delete error', err);
+        alert('Network error deleting ticket');
+    }
+    async function toggleService(serviceKey) {
+        setSelectedServices(prev => {
+            if (prev.includes(serviceKey)) return prev.filter(s => s !== serviceKey);
+            return [...prev, serviceKey];
+        });
+    }
+}
 
   return (
     <div style={{fontFamily:'sans-serif', padding:20}}>
@@ -214,7 +261,7 @@ async function deleteTicket(id) {
 
       <div style={{display:'flex', gap:20, alignItems:'flex-start'}}>
         {/* Ticket box */}
-        <div style={{ width:320, padding:12, border:'1px solid #ddd', borderRadius:8 }}>
+        <div style={{ width:320, padding:12, border:'1px solid #ddd', borderRadius:8, background:'#fff' }}>
           <h2>Take a Ticket</h2>
           <input placeholder="Your name (optional)" value={name} onChange={e=>setName(e.target.value)} style={{width:'100%', marginBottom:8}}/>
           <div>
