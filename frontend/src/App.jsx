@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import './display.css';
 const API = import.meta.env.VITE_API_URL || 'http://192.168.18.34:4000';
 const STAFF_KEY = import.meta.env.VITE_STAFF_KEY || 'STI-QUEUE-KEY';
@@ -8,7 +8,7 @@ async function safeJson(res) {
   catch (e) { return { _parseError: true, text: await (res.text().catch(()=>'')) }; }
 }
 
-const AVAILABLE_SERVICES = [
+const DEFAULT_SERVICES = [
   { key: 'registrar', label: 'Registrar' },
   { key: 'cashier', label: 'Cashier' },
   { key: 'admissions', label: 'Admissions' },
@@ -17,95 +17,201 @@ const AVAILABLE_SERVICES = [
 
 const QUER_TYPES = ['Student','Faculty/Staff','Visitor','Other'];
 
-/* ---------- SelectedServiceList (kiosk) ---------- */
-function SelectedServiceList({ serviceOrder, selectedServices, setSelectedServices, labels }) {
-  const [dragKey, setDragKey] = useState(null);
+/* DraggableServices - provides drag-to-reorder + checkboxes + up/down buttons.
+   Props:
+     services: default service definitions (array of {key,label})
+     selectedKeys: array of keys currently selected & ordered
+     setSelectedKeys: setter for ordered keys
+*/
+function DraggableServices({ services=DEFAULT_SERVICES, selectedKeys, setSelectedKeys }) {
+  const containerRef = useRef(null);
+  const draggingRef = useRef(null);
+  const ghostRef = useRef(null);
+  const placeholderRef = useRef(null);
+  const offsetYRef = useRef(0);
 
-  function toggleService(key) {
-    setSelectedServices(prev => {
-      if (!Array.isArray(prev)) prev = [];
-      if (prev.includes(key)) return prev.filter(x => x !== key);
-      // append by default
-      return [...prev, key];
+  // internal helper: build DOM list from services order
+  useEffect(() => {
+    // ensure initial DOM order matches services array
+    // nothing else required, renderer handles mapping
+  }, [services]);
+
+  // pointer-based dragging handlers (similar logic to kiosk.html)
+  function startDrag(e, key) {
+    // ignore if clicked on input or button
+    if (e.target.closest('input') || e.target.closest('button')) return;
+    const el = e.currentTarget;
+    draggingRef.current = el;
+    const rect = el.getBoundingClientRect();
+    offsetYRef.current = e.clientY - rect.top;
+
+    // create ghost
+    const ghost = el.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    Object.assign(ghost.style, {
+      position: 'fixed',
+      left: rect.left + 'px',
+      top: rect.top + 'px',
+      width: rect.width + 'px',
+      zIndex: 9999,
+      pointerEvents: 'none'
     });
+    document.body.appendChild(ghost);
+    ghostRef.current = ghost;
+
+    // placeholder
+    const placeholder = document.createElement('div');
+    placeholder.className = 'svc-placeholder';
+    placeholder.style.height = rect.height + 'px';
+    placeholderRef.current = placeholder;
+
+    el.style.visibility = 'hidden';
+    if (el.nextSibling) containerRef.current.insertBefore(placeholder, el.nextSibling);
+    else containerRef.current.appendChild(placeholder);
+
+    el.classList.add('dragging');
+
+    if (e.pointerId != null) el.setPointerCapture(e.pointerId);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
   }
 
-  function onDragStart(e, key) {
-    setDragKey(key);
-    e.dataTransfer.effectAllowed = 'move';
-    try { e.dataTransfer.setData('text/plain', key); } catch(e) {}
-  }
-  function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
-  function onDrop(e, targetKey) {
-    e.preventDefault();
-    const source = dragKey || e.dataTransfer.getData('text/plain');
-    if (!source || source === targetKey) return;
-    setSelectedServices(prev => {
-      const srcIdx = prev.indexOf(source);
-      const tgtIdx = prev.indexOf(targetKey);
-      if (srcIdx === -1 || tgtIdx === -1) return prev;
-      const copy = prev.slice();
-      copy.splice(srcIdx, 1);
-      copy.splice(tgtIdx, 0, source);
-      return copy;
-    });
-    setDragKey(null);
+  function onPointerMove(e){
+    const dragging = draggingRef.current;
+    const ghost = ghostRef.current;
+    const placeholder = placeholderRef.current;
+    if (!dragging || !ghost || !placeholder) return;
+    ghost.style.left = (e.clientX - 20) + 'px';
+    ghost.style.top = (e.clientY - offsetYRef.current) + 'px';
+
+    const elUnder = document.elementFromPoint(e.clientX, e.clientY);
+    const row = elUnder ? elUnder.closest('.svc-row') : null;
+
+    if (row && containerRef.current.contains(row) && row !== dragging) {
+      const rect = row.getBoundingClientRect();
+      const mid = rect.top + rect.height/2;
+      if (e.clientY < mid) {
+        if (row.previousSibling !== placeholder) containerRef.current.insertBefore(placeholder, row);
+      } else {
+        if (row.nextSibling !== placeholder) containerRef.current.insertBefore(placeholder, row.nextSibling);
+      }
+    } else {
+      if (placeholder.parentNode !== containerRef.current) containerRef.current.appendChild(placeholder);
+    }
   }
 
+  function onPointerUp(e){
+    const dragging = draggingRef.current;
+    const ghost = ghostRef.current;
+    const placeholder = placeholderRef.current;
+    if (!dragging) return;
+
+    if (placeholder && placeholder.parentNode === containerRef.current) {
+      containerRef.current.insertBefore(dragging, placeholder);
+      placeholder.remove();
+    } else {
+      dragging.style.visibility = '';
+    }
+
+    dragging.classList.remove('dragging');
+    dragging.style.visibility = '';
+    if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+
+    // update selectedKeys according to DOM order + checked state
+    const newKeys = Array.from(containerRef.current.querySelectorAll('.svc-row'))
+      .filter(r => r.querySelector('input[type="checkbox"]').checked)
+      .map(r => r.dataset.key);
+    setSelectedKeys(newKeys);
+
+    // cleanup
+    draggingRef.current = null;
+    ghostRef.current = null;
+    placeholderRef.current = null;
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', onPointerUp);
+  }
+
+  // keyboard up/down - find row with dataset.key and move it
+  function moveKey(key, dir){
+    const rows = Array.from(containerRef.current.querySelectorAll('.svc-row'));
+    const idx = rows.findIndex(r => r.dataset.key === key);
+    if (idx === -1) return;
+    if (dir === -1 && idx > 0) containerRef.current.insertBefore(rows[idx], rows[idx-1]);
+    if (dir === 1 && idx < rows.length-1) containerRef.current.insertBefore(rows[idx+1], rows[idx]);
+    // update selectedKeys after DOM reorder
+    const newKeys = Array.from(containerRef.current.querySelectorAll('.svc-row'))
+      .filter(r => r.querySelector('input[type="checkbox"]').checked)
+      .map(r => r.dataset.key);
+    setSelectedKeys(newKeys);
+  }
+
+  // toggle checkbox
+  function onToggleCheckbox(key, checked){
+    // update selectedKeys by either removing or adding this key at current DOM position
+    if (!checked) {
+      setSelectedKeys(prev => prev.filter(k => k !== key));
+    } else {
+      // insert at DOM order position
+      const rows = Array.from(containerRef.current.querySelectorAll('.svc-row'));
+      const orderedKeys = rows.filter(r=> r.querySelector('input[type="checkbox"]').checked || r.dataset.key===key).map(r=> r.dataset.key);
+      // keep only checked keys
+      const final = orderedKeys.filter(k => {
+        const row = rows.find(r => r.dataset.key === k);
+        return row && row.querySelector('input[type="checkbox"]').checked;
+      });
+      setSelectedKeys(final);
+    }
+  }
+
+  // render rows - we allow DOM reorder, so we don't strictly rely on React for order changes.
+  // We still render the rows in the initial order given by services.
   return (
     <div>
-      <div style={{marginBottom:8}}>Select service(s): (drag to reorder selected)</div>
-
-      {/* selected (draggable) */}
-      <div>
-        {selectedServices.length ? selectedServices.map(key => (
-          <div key={key}
-            draggable
-            onDragStart={(e)=>onDragStart(e,key)}
-            onDragOver={onDragOver}
-            onDrop={(e)=>onDrop(e,key)}
-            style={{display:'flex', alignItems:'center', gap:8, padding:6, background:'#fff', borderRadius:6, marginBottom:6, cursor:'grab'}}
-          >
-            <input type="checkbox" checked onChange={()=>toggleService(key)} />
-            <div style={{flex:1}}>{labels[key] || key}</div>
-            <div style={{fontSize:12, color:'#666'}}>drag</div>
-          </div>
-        )) : <div style={{color:'#666', marginBottom:6}}>No services selected</div>}
-      </div>
-
-      {/* quick-add buttons for not-selected services in the default serviceOrder */}
-      <div style={{marginTop:8}}>
-        <div style={{fontSize:12, color:'#333', marginBottom:6}}>Add more services:</div>
-        <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
-          {serviceOrder.filter(k=>!selectedServices.includes(k)).map(k => (
-            <button key={k} onClick={()=>toggleService(k)} style={{padding:'6px 10px', borderRadius:6}}>
-              + {labels[k] || k}
-            </button>
-          ))}
-        </div>
+      <div style={{marginBottom:6}}>Select service(s): <small style={{color:'#666'}}> (drag to reorder selected)</small></div>
+      <div ref={containerRef}>
+        {services.map(s => {
+          const isChecked = selectedKeys.includes(s.key);
+          return (
+            <div
+              key={s.key}
+              data-key={s.key}
+              className="svc-row"
+              style={{display:'flex',alignItems:'center',gap:8,padding:8,borderRadius:6,background:'#f9f9f9',marginBottom:6,cursor:'grab'}}
+              onPointerDown={(e)=>startDrag(e, s.key)}
+            >
+              <input type="checkbox" className="svc-check" checked={isChecked} onChange={(ev)=>onToggleCheckbox(s.key, ev.target.checked)} />
+              <div className="svc-title" style={{flex:1}}>{s.label}</div>
+              <div className="svc-controls">
+                <button className="small-btn" onClick={()=>moveKey(s.key, -1)}>↑</button>
+                <button className="small-btn" onClick={()=>moveKey(s.key, 1)}>↓</button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-/* ---------- ServiceTable component (renders single service column) ---------- */
-function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, onCallNext, label }) {
+/* ServiceTable component (renders a single service column) */
+function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, onCallNext }) {
   // only show tickets whose current_service equals this column
   const visible = tickets.filter(t => t.current_service === service);
-  // prominent called one
   const called = tickets.find(t => t.status === 'called' && t.called_service === service);
 
   return (
     <div className="service-card" style={{
-      flex:1, minWidth:260, margin:10, padding:10, borderRadius:6, background:'#0f2940', color:'#fff', boxShadow:'0 6px 16px rgba(0,0,0,0.12)'
+      flex:1, minWidth:260, margin:10, padding:10, borderRadius:6, background:'#0f2940', color:'#fff', boxShadow:'0 6px 16px rgba(0,0,0,0.2)'
     }}>
-      <h3 style={{textAlign:'center', margin:0, padding:8, fontSize:16, letterSpacing:1}}>{label || service.toUpperCase()}</h3>
-      <button style={{ width:'100%', margin:'10px 0', background:'#081621', color:'#fff', border:'none', padding:'8px 10px', borderRadius:6 }} onClick={() => onCallNext(service)}>
+      <h3 style={{textAlign:'center', margin:0, padding:8, fontSize:16, letterSpacing:1}}>{service.toUpperCase()}</h3>
+      <button style={{ width:'100%', margin:'10px 0' }} onClick={() => onCallNext(service)}>
         Call Next ({service})
       </button>
 
       {called ? (
-        <div style={{ background:'#111', padding:16, marginBottom:12, borderRadius:6, display:'flex', alignItems:'center', gap:12 }}>
+        <div style={{
+          background:'#111', padding:16, marginBottom:12, borderRadius:6, display:'flex', alignItems:'center', gap:12
+        }}>
           <div style={{fontSize:56, fontWeight:700, lineHeight:1}}>{called.displayToken || String(called.id).padStart(3,'0')}</div>
           <div>
             <div style={{fontSize:18, fontWeight:600}}>{called.name || 'No name'}</div>
@@ -142,10 +248,18 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
                   <div style={{fontSize:11, color:'#cfe6ff'}}>Progress: {Number(q.service_index || 0) + 1}/{(q.services || []).length} — {(q.services || []).join(' → ')}</div>
                 </td>
                 <td style={{padding:6}}>
-                  <div className="actions" style={{display:'flex', gap:6, alignItems:'center'}}>
-                    <button onClick={() => onServe(q.id, service)} disabled={!(q.status === 'called' && q.called_service === service)}>Serve</button>
+                  <div className="actions">
+                    <button
+                      onClick={() => onServe(q.id, service)}
+                      disabled={!(q.status === 'called' && q.called_service === service)}
+                      title={q.status === 'called' && q.called_service === service ? 'Serve' : 'Ticket not called here'}
+                    >
+                      Serve
+                    </button>
                     <button onClick={() => onHold(q.id)}>Hold</button>
-                    {q.status === 'hold' ? <button onClick={() => onRecall(q.id)}>Recall</button> : null}
+                    {q.status === 'hold' ? (
+                      <button onClick={() => onRecall(q.id)}>Recall</button>
+                    ) : null}
                     <button className="delete" onClick={() => onDelete(q.id)}>Delete</button>
                   </div>
                 </td>
@@ -162,14 +276,9 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
 export default function App(){
   const [queue, setQueue] = useState([]);
   const [name, setName] = useState('');
-  const [selectedServices, setSelectedServices] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('kiosk.services')) || ['registrar']; } catch(e){ return ['registrar']; }
-  });
+  const [selectedServices, setSelectedServices] = useState(['registrar']);
   const [querType, setQuerType] = useState(QUER_TYPES[0]);
   const [stats, setStats] = useState({waiting:0, served:0});
-
-  const serviceOrder = AVAILABLE_SERVICES.map(s => s.key);
-  const labelMap = AVAILABLE_SERVICES.reduce((acc, s) => { acc[s.key] = s.label; return acc; }, {});
 
   useEffect(() => {
     fetchQueue(); fetchStats();
@@ -177,31 +286,35 @@ export default function App(){
     ['created','called','served','moved','reassigned','hold','recalled','deleted'].forEach(evt =>
       es.addEventListener(evt, () => { fetchQueue(); fetchStats(); })
     );
-    es.onerror = (e) => console.warn('SSE error', e);
+    es.onerror = (e) => {
+      console.warn('SSE error', e);
+    };
     return () => es.close();
   }, []);
-
-  useEffect(() => {
-    try { localStorage.setItem('kiosk.services', JSON.stringify(selectedServices)); } catch(e){}
-  }, [selectedServices]);
 
   async function fetchQueue(){
     try {
       const r = await fetch(`${API}/queue`);
       const data = await safeJson(r);
       if (!r.ok) { console.error('fetchQueue error', data); return; }
-      const parsed = (Array.isArray(data) ? data : []).map(t => {
-        const services = Array.isArray(t.services) ? t.services : (function(){
-          try { return JSON.parse(t.services || '[]'); } catch(e){ return []; }
-        })();
+      // compute current_service (the service at current service_index)
+      const enriched = Array.isArray(data) ? data.map(t => {
+        let services = [];
+        try { services = Array.isArray(t.services) ? t.services : JSON.parse(t.services || '[]'); } catch(e){ services = []; }
         const idx = Number(t.service_index || 0);
-        const current_service = Array.isArray(services) && services[idx] ? services[idx] : (t.called_service || '');
-        const prefixMap = { registrar:'R', cashier:'C', admissions:'A', records:'D' };
-        const displayToken = (t.called_service ? (prefixMap[t.called_service] || '') : '') + String(t.id).padStart(3,'0');
-        return {...t, services, service_index: idx, current_service, displayToken};
-      });
-      setQueue(parsed);
-    } catch (e) { console.error('fetchQueue network', e); }
+        const current_service = (Array.isArray(services) && services[idx]) ? services[idx] : null;
+        // display token (prefix)
+        let prefix = '';
+        if (current_service === 'registrar') prefix='R';
+        if (current_service === 'cashier') prefix='C';
+        if (current_service === 'admissions') prefix='A';
+        if (current_service === 'records') prefix='D';
+        return { ...t, services, current_service, displayToken: (prefix + String(t.id).padStart(3,'0')) };
+      }) : [];
+      setQueue(enriched);
+    } catch (e) {
+      console.error('fetchQueue network', e);
+    }
   }
   async function fetchStats(){
     try {
@@ -209,10 +322,12 @@ export default function App(){
       const data = await safeJson(r);
       if (!r.ok) { console.error('fetchStats error', data); return; }
       setStats(data);
-    } catch (e) { console.error('fetchStats network', e); }
+    } catch (e) {
+      console.error('fetchStats network', e);
+    }
   }
 
-  /* -------- kiosk: create ticket -------- */
+  /* kiosk: create ticket */
   async function takeTicket(){
     if (!Array.isArray(selectedServices) || selectedServices.length === 0) {
       return alert('Select at least one service.');
@@ -221,19 +336,19 @@ export default function App(){
       const res = await fetch(`${API}/ticket`, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ name, services: selectedServices, quer_type: querType })
+        body: JSON.stringify({
+          name, services: selectedServices, quer_type: querType
+        })
       });
       const data = await safeJson(res);
       if (!res.ok) return alert('Failed to take ticket: ' + (data.error || data.text || res.statusText));
-      alert(`Your token: ${String(data.id).padStart(3,'0')} (Services: ${selectedServices.join(', ')})`);
-      setName('');
-      setSelectedServices(['registrar']);
-      setQuerType(QUER_TYPES[0]);
+      alert(`Your token: ${String(data.id).padStart(3,'0')} (Services: ${data.services.join(', ')})`);
+      setName(''); setSelectedServices(['registrar']); setQuerType(QUER_TYPES[0]);
       fetchQueue(); fetchStats();
     } catch (e) { console.error(e); alert('Network error'); }
   }
 
-  /* -------- staff actions -------- */
+  /* staff actions */
   async function callNext(service) {
     try {
       const r = await fetch(`${API}/next`, {
@@ -263,7 +378,10 @@ export default function App(){
 
   async function hold(id) {
     try {
-      const r = await fetch(`${API}/hold/${id}`, { method:'POST', headers: { 'x-staff-key': STAFF_KEY } });
+      const r = await fetch(`${API}/hold/${id}`, {
+        method: 'POST',
+        headers: { 'x-staff-key': STAFF_KEY }
+      });
       const data = await safeJson(r);
       if (!r.ok) { alert('Hold failed: ' + (data.error || data.text || r.statusText)); return; }
       fetchQueue(); fetchStats();
@@ -272,7 +390,10 @@ export default function App(){
 
   async function recall(id) {
     try {
-      const r = await fetch(`${API}/recall/${id}`, { method:'POST', headers: { 'x-staff-key': STAFF_KEY } });
+      const r = await fetch(`${API}/recall/${id}`, {
+        method: 'POST',
+        headers: { 'x-staff-key': STAFF_KEY }
+      });
       const data = await safeJson(r);
       if (!r.ok) { alert('Recall failed: ' + (data.error || data.text || r.statusText)); return; }
       fetchQueue(); fetchStats();
@@ -283,16 +404,30 @@ export default function App(){
     if (!confirm('Delete this ticket?')) return;
     try {
       const url = `${API}/ticket/${id}`;
-      const res = await fetch(url, { method: 'DELETE', headers: { 'x-staff-key': STAFF_KEY } });
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers: { 'x-staff-key': STAFF_KEY }
+      });
       const text = await res.text().catch(()=>'');
-      if (res.ok) { alert('Deleted'); fetchQueue(); fetchStats(); return; }
-      // fallback & show server message
+
+      if (res.ok) {
+        alert('Deleted');
+        fetchQueue(); fetchStats();
+        return;
+      }
+      // fallback POST
       const fallbackUrl = `${API}/ticket/${id}/delete`;
-      const r2 = await fetch(fallbackUrl, { method: 'POST', headers: { 'x-staff-key': STAFF_KEY } });
-      const t2 = await r2.text().catch(()=>'');
+      const r2 = await fetch(fallbackUrl, {
+        method: 'POST',
+        headers: { 'x-staff-key': STAFF_KEY }
+      });
       if (r2.ok) { alert('Deleted (fallback)'); fetchQueue(); fetchStats(); return; }
+      const t2 = await r2.text().catch(()=>'');
       alert('Delete failed: ' + (t2 || res.statusText || res.status));
-    } catch (err) { console.error('delete error', err); alert('Network error deleting ticket'); }
+    } catch (err) {
+      console.error('delete error', err);
+      alert('Network error deleting ticket');
+    }
   }
 
   return (
@@ -301,17 +436,10 @@ export default function App(){
 
       <div style={{display:'flex', gap:20, alignItems:'flex-start'}}>
         {/* Ticket box */}
-        <div style={{ width:360, padding:12, border:'1px solid #ddd', borderRadius:8, background:'#fff' }}>
+        <div style={{ width:320, padding:12, border:'1px solid #ddd', borderRadius:8, background:'#fff' }}>
           <h2>Take a Ticket</h2>
           <input placeholder="Your name (optional)" value={name} onChange={e=>setName(e.target.value)} style={{width:'100%', marginBottom:8}}/>
-
-          <SelectedServiceList
-            serviceOrder={serviceOrder}
-            selectedServices={selectedServices}
-            setSelectedServices={setSelectedServices}
-            labels={labelMap}
-          />
-
+          <DraggableServices services={DEFAULT_SERVICES} selectedKeys={selectedServices} setSelectedKeys={setSelectedServices} />
           <div style={{marginTop:8}}>
             <label>Type of quer: </label>
             <select value={querType} onChange={e=>setQuerType(e.target.value)}>
@@ -325,9 +453,9 @@ export default function App(){
           <div>Served: {stats.served}</div>
         </div>
 
-        {/* Service cards (columns) */}
+        {/* Service cards */}
         <div style={{flex:1, display:'flex', gap:12, overflowX:'auto'}}>
-          {AVAILABLE_SERVICES.map(svc => (
+          {DEFAULT_SERVICES.map(svc => (
             <ServiceTable
               key={svc.key}
               service={svc.key}
@@ -337,7 +465,6 @@ export default function App(){
               onRecall={recall}
               onDelete={deleteTicket}
               onCallNext={callNext}
-              label={svc.label}
             />
           ))}
         </div>
