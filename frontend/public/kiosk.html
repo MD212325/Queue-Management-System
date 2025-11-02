@@ -8,63 +8,55 @@
     body{font-family:Arial,Helvetica,sans-serif;padding:18px;background:#fff;color:#111}
     .card{max-width:520px;margin:12px auto;padding:16px;border-radius:10px;border:1px solid #ddd}
     h2{margin:0 0 12px}
-    .svc-row{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:#f9f9f9;margin-bottom:8px;transition:background .12s}
-    .svc-row.dragging{opacity:0.6;background:#eef3f8;border:2px dashed #9aa8b8}
-    .svc-row .svc-check{transform:scale(1.15)}
-    .svc-title{flex:1;font-weight:600}
+    #svc-list{display:block; margin-bottom:8px;}
+    .svc-row{display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;background:#f9f9f9;margin-bottom:6px;cursor:grab; user-select:none}
+    .svc-row.dragging{opacity:0.3}
+    .svc-row .svc-title{flex:1;font-weight:600}
     .svc-controls button{margin-left:6px}
-    .btn{display:inline-block;padding:10px 12px;border-radius:8px;background:#ffd100;color:#0b4ea2;border:none;font-weight:700;width:100%}
+    .btn{display:inline-block;padding:10px 12px;border-radius:6px;background:#ffd100;color:#0b4ea2;border:none;font-weight:700;width:100%}
     .hint{font-size:13px;color:#666;margin-bottom:8px}
     #result{margin-top:12px;padding:10px;border-radius:6px;background:#f1f8ff;color:#002b66;display:none}
     .disabled{opacity:0.6;pointer-events:none}
-    .small{font-size:12px;color:#666}
-    /* insertion indicator */
-    .insert-indicator {
-      height:6px;
-      border-radius:4px;
-      margin:6px 0;
-      background: linear-gradient(90deg,#0b4ea2,#ffd100);
-      box-shadow:0 0 12px rgba(11,78,162,0.25);
-      transition:opacity .12s;
-    }
-    /* mobile affordance: make controls slightly larger */
-    @media (max-width:520px){
-      .svc-row{padding:10px}
-      .svc-controls button{padding:6px 8px}
-      .svc-row .svc-check{transform:scale(1.25)}
-    }
+    /* ghost */
+    .drag-ghost{box-shadow:0 10px 30px rgba(0,0,0,0.35);transform:scale(1.01);border-radius:6px;pointer-events:none;opacity:0.98}
+    /* placeholder */
+    .svc-placeholder{height:44px;border-radius:6px;background:#e9eef6;margin-bottom:6px;border:2px dashed #c7d6ee}
+    /* small up/down buttons */
+    .small-btn{padding:3px 6px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer}
+    /* responsive */
+    @media (max-width:480px){ .card{margin:8px} }
   </style>
 </head>
 <body>
-  <div class="card" role="application" aria-label="Kiosk ticket taker">
+  <div class="card">
     <h2>Take a Token</h2>
-    <div class="hint">Select which services you want, then order them (first → last). You can drag rows, use ↑/↓ buttons, or touch-and-drag on phones.</div>
+    <div class="hint">Select which services you want, then order them (first → last). You can drag rows, use the ↑/↓ buttons, or touch-and-drag on phones.</div>
 
-    <div id="svc-list" aria-live="polite">
-      <div class="svc-row" data-svc="registrar" draggable="true">
-        <input type="checkbox" class="svc-check" checked aria-label="Registrar"/>
+    <div id="svc-list" aria-label="Service order list">
+      <div class="svc-row" data-svc="registrar" tabindex="0">
+        <input type="checkbox" class="svc-check" checked />
         <div class="svc-title">Registrar</div>
-        <div class="svc-controls" aria-hidden="true">
-          <button class="up">↑</button><button class="down">↓</button>
+        <div class="svc-controls">
+          <button class="small-btn up">↑</button><button class="small-btn down">↓</button>
         </div>
       </div>
 
-      <div class="svc-row" data-svc="cashier" draggable="true">
-        <input type="checkbox" class="svc-check" checked aria-label="Cashier"/>
+      <div class="svc-row" data-svc="cashier" tabindex="0">
+        <input type="checkbox" class="svc-check" checked />
         <div class="svc-title">Cashier</div>
-        <div class="svc-controls"><button class="up">↑</button><button class="down">↓</button></div>
+        <div class="svc-controls"><button class="small-btn up">↑</button><button class="small-btn down">↓</button></div>
       </div>
 
-      <div class="svc-row" data-svc="admissions" draggable="true">
-        <input type="checkbox" class="svc-check" checked aria-label="Admissions"/>
+      <div class="svc-row" data-svc="admissions" tabindex="0">
+        <input type="checkbox" class="svc-check" checked />
         <div class="svc-title">Admissions</div>
-        <div class="svc-controls"><button class="up">↑</button><button class="down">↓</button></div>
+        <div class="svc-controls"><button class="small-btn up">↑</button><button class="small-btn down">↓</button></div>
       </div>
 
-      <div class="svc-row" data-svc="records" draggable="true">
-        <input type="checkbox" class="svc-check" checked aria-label="Records"/>
+      <div class="svc-row" data-svc="records" tabindex="0">
+        <input type="checkbox" class="svc-check" checked />
         <div class="svc-title">Records</div>
-        <div class="svc-controls"><button class="up">↑</button><button class="down">↓</button></div>
+        <div class="svc-controls"><button class="small-btn up">↑</button><button class="small-btn down">↓</button></div>
       </div>
     </div>
 
@@ -78,283 +70,161 @@
 
     <button id="get" class="btn" style="margin-top:12px">Get Token</button>
 
-    <div id="result" role="status" aria-live="polite"></div>
-    <div class="small" style="margin-top:8px">Tip: drag a service row to reorder or use the ↑ / ↓ buttons. Press Get Token to submit the ordered services array to the server.</div>
+    <div id="result"></div>
   </div>
 
 <script>
-/*
-  Kiosk: improved drag (desktop + touch) + insertion indicator + up/down + persistence
-  API variable: set to your server. Change DEFAULT_API if needed.
-*/
-const DEFAULT_API = 'http://192.168.18.34:4000';
-const API = window.KIOSK_API || DEFAULT_API;
-const STORAGE_KEY = 'kiosk.services.v1';
+const API = 'http://192.168.18.34:4000'; // adjust if needed
 
-const svcList = document.getElementById('svc-list');
-const getBtn = document.getElementById('get');
-const resultBox = document.getElementById('result');
-const nameInput = document.getElementById('name');
-const querSelect = document.getElementById('quer');
+const list = document.getElementById('svc-list');
+let dragging = null;
+let ghost = null;
+let placeholder = null;
+let offsetY = 0;
 
-// insertion indicator element (single shared)
-const indicator = document.createElement('div');
-indicator.className = 'insert-indicator';
-
-// helpers
-function saveState() {
-  const items = Array.from(svcList.querySelectorAll('.svc-row'));
-  const state = items.map(it => ({ key: it.dataset.svc, checked: !!it.querySelector('.svc-check').checked }));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+function createPlaceholder(height){
+  const p = document.createElement('div');
+  p.className = 'svc-placeholder';
+  p.style.height = (height || 44) + 'px';
+  return p;
 }
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const state = JSON.parse(raw);
-    const rows = Array.from(svcList.querySelectorAll('.svc-row'));
-    // append in saved order
-    state.forEach(s => {
-      const row = rows.find(r => r.dataset.svc === s.key);
-      if (row) {
-        svcList.appendChild(row);
-        const cb = row.querySelector('.svc-check');
-        if (cb) cb.checked = !!s.checked;
-      }
-    });
-  } catch (e) { console.warn('failed to load kiosk state', e); }
+function startDrag(ev, item){
+  // ignore if clicking on checkboxes or buttons
+  if (ev.target.closest('input') || ev.target.closest('button')) return;
+  ev.preventDefault();
+  dragging = item;
+  const rect = item.getBoundingClientRect();
+  offsetY = ev.clientY - rect.top;
+
+  // ghost
+  ghost = item.cloneNode(true);
+  ghost.classList.add('drag-ghost');
+  ghost.style.position = 'fixed';
+  ghost.style.left = rect.left + 'px';
+  ghost.style.top = rect.top + 'px';
+  ghost.style.width = rect.width + 'px';
+  ghost.style.zIndex = 9999;
+  document.body.appendChild(ghost);
+
+  // placeholder
+  placeholder = createPlaceholder(rect.height);
+  item.style.visibility = 'hidden';
+  // ensure placeholder in container
+  if (item.nextSibling) list.insertBefore(placeholder, item.nextSibling);
+  else list.appendChild(placeholder);
+
+  item.classList.add('dragging');
+
+  // capture pointer for touch & mouse
+  if (ev.pointerId != null) item.setPointerCapture(ev.pointerId);
+
+  document.addEventListener('pointermove', onPointerMove);
+  document.addEventListener('pointerup', endDrag);
 }
 
-function getSelectedOrderedServices() {
-  const items = Array.from(document.querySelectorAll('#svc-list .svc-row'));
-  return items.filter(it => it.querySelector('.svc-check').checked).map(it => it.dataset.svc);
-}
+function onPointerMove(e){
+  if (!dragging || !ghost) return;
+  // move ghost
+  ghost.style.left = (e.clientX - 20) + 'px';
+  ghost.style.top = (e.clientY - offsetY) + 'px';
 
-function showResult(text, isError=false) {
-  resultBox.style.display = 'block';
-  resultBox.style.background = isError ? '#ffecec' : '#f1f8ff';
-  resultBox.style.color = isError ? '#a90000' : '#002b66';
-  resultBox.textContent = text;
-}
-function hideResult(){ resultBox.style.display = 'none'; resultBox.textContent = ''; }
+  // Determine the element under pointer (excluding the ghost)
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  let row = el ? el.closest('.svc-row') : null;
 
-// up/down button handlers
-function bindUpDown() {
-  svcList.querySelectorAll('.up').forEach(btn => btn.onclick = e => {
-    const item = e.target.closest('.svc-row');
-    const prev = item.previousElementSibling;
-    if (prev) {
-      svcList.insertBefore(item, prev);
-      saveState();
-    }
-  });
-  svcList.querySelectorAll('.down').forEach(btn => btn.onclick = e => {
-    const item = e.target.closest('.svc-row');
-    const next = item.nextElementSibling;
-    if (next) {
-      svcList.insertBefore(next, item);
-      saveState();
-    }
-  });
-}
-
-// Utility: returns .svc-row under page coordinates (or null)
-function getRowFromPoint(x,y) {
-  const el = document.elementFromPoint(x,y);
-  if (!el) return null;
-  return el.closest && el.closest('.svc-row');
-}
-
-// DRAG & DROP (desktop)
-function enableDesktopDrag() {
-  let dragged = null;
-
-  svcList.querySelectorAll('.svc-row').forEach(row=>{
-    row.draggable = true;
-    row.addEventListener('dragstart', (e)=>{
-      dragged = row;
-      row.classList.add('dragging');
-      // try to set drag image to avoid default ghost
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = canvas.height = 1;
-        e.dataTransfer.setDragImage(canvas,0,0);
-      } catch (err) {}
-      // remove any lingering indicator
-      if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
-    });
-
-    row.addEventListener('dragend', ()=> {
-      if (dragged) dragged.classList.remove('dragging');
-      dragged = null;
-      if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
-    });
-  });
-
-  // show indicator as we move over svcList, don't mutate DOM until drop
-  svcList.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    const target = getRowFromPoint(e.clientX, e.clientY);
-    if (!target) {
-      // if no row, append indicator at end
-      if (indicator.parentNode !== svcList) svcList.appendChild(indicator);
-      return;
-    }
-    const rect = target.getBoundingClientRect();
-    const midY = rect.top + rect.height/2;
-    const insertBeforeNode = (e.clientY < midY) ? target : target.nextElementSibling;
-    if (insertBeforeNode === indicator) return;
-    // place indicator
-    if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
-    svcList.insertBefore(indicator, insertBeforeNode);
-  });
-
-  // on drop, move the dragged element to indicator position
-  svcList.addEventListener('drop', (e) => {
-    e.preventDefault();
-    if (!document.querySelector('.svc-row.dragging')) {
-      // nothing being dragged
-      if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
-      return;
-    }
-    const draggedRow = document.querySelector('.svc-row.dragging');
-    if (!draggedRow) {
-      if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
-      return;
-    }
-    // insert dragged before indicator (or append if indicator at end)
-    svcList.insertBefore(draggedRow, indicator);
-    draggedRow.classList.remove('dragging');
-    if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
-    saveState();
-  });
-}
-
-// TOUCH (mobile) — emulate drag by tracking touchmove and using elementFromPoint
-function enableTouchDrag() {
-  let touchDragged = null;
-  let touchId = null;
-
-  function touchStart(e) {
-    const t = e.targetTouches[0];
-    touchId = t.identifier;
-    const row = e.target.closest && e.target.closest('.svc-row');
-    if (!row) return;
-    touchDragged = row;
-    row.classList.add('dragging');
-    // remove existing indicator
-    if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
-    e.preventDefault();
-  }
-
-  function touchMove(e) {
-    if (!touchDragged) return;
-    // find the touch with touchId
-    const t = Array.from(e.touches).find(tt => tt.identifier === touchId);
-    if (!t) return;
-    const x = t.clientX, y = t.clientY;
-    const target = getRowFromPoint(x,y);
-    if (!target || target === touchDragged) {
-      // append at end if no target
-      if (!indicator.parentNode) svcList.appendChild(indicator);
-      return;
-    }
-    const rect = target.getBoundingClientRect();
-    const midY = rect.top + rect.height/2;
-    const insertBeforeNode = (y < midY) ? target : target.nextElementSibling;
-    if (indicator.parentNode !== svcList || indicator.nextElementSibling !== insertBeforeNode) {
-      if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
-      svcList.insertBefore(indicator, insertBeforeNode);
-    }
-    e.preventDefault();
-  }
-
-  function touchEnd(e) {
-    if (!touchDragged) return;
-    // finalize: insert the dragged row before indicator (or append)
-    if (indicator.parentNode) {
-      svcList.insertBefore(touchDragged, indicator);
-      indicator.parentNode.removeChild(indicator);
+  // If pointer is over a row, insert placeholder before/after it depending pointerY
+  if (row && list.contains(row) && row !== dragging) {
+    const rRect = row.getBoundingClientRect();
+    const middle = rRect.top + rRect.height/2;
+    if (e.clientY < middle) {
+      if (row.previousSibling !== placeholder) list.insertBefore(placeholder, row);
     } else {
-      // no indicator: ensure item stays where it was
+      if (row.nextSibling !== placeholder) list.insertBefore(placeholder, row.nextSibling);
     }
-    touchDragged.classList.remove('dragging');
-    touchDragged = null;
-    touchId = null;
-    saveState();
+  } else {
+    // If not over a row, ensure placeholder at end
+    if (placeholder.parentNode !== list) list.appendChild(placeholder);
   }
-
-  // bind listeners on svcList to capture touches
-  svcList.addEventListener('touchstart', (e) => touchStart(e), {passive:false});
-  svcList.addEventListener('touchmove', (e) => touchMove(e), {passive:false});
-  svcList.addEventListener('touchend', (e) => touchEnd(e));
-  svcList.addEventListener('touchcancel', (e) => { if (touchDragged) { touchDragged.classList.remove('dragging'); touchDragged=null; if (indicator.parentNode) indicator.parentNode.removeChild(indicator); } });
 }
 
-// initial binding to up/down and drag/touch
-function rebindAll() {
-  bindUpDown();
-  enableDesktopDrag();
-  enableTouchDrag();
-  // checkbox change saves state
-  svcList.querySelectorAll('.svc-check').forEach(cb => cb.onchange = saveState);
+function endDrag(e){
+  if (!dragging) return;
+  // insert dragging back into container at placeholder position
+  if (placeholder && placeholder.parentNode === list) {
+    list.insertBefore(dragging, placeholder);
+    placeholder.remove();
+  } else {
+    // fallback: make it visible again
+    dragging.style.visibility = '';
+  }
+  // cleanup
+  dragging.classList.remove('dragging');
+  dragging.style.visibility = '';
+  if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+  ghost = null;
+  placeholder = null;
+  dragging = null;
+
+  document.removeEventListener('pointermove', onPointerMove);
+  document.removeEventListener('pointerup', endDrag);
 }
 
-// restore saved state & bind
-loadState();
-rebindAll();
+function bindRows(){
+  Array.from(list.querySelectorAll('.svc-row')).forEach(row => {
+    row.onpointerdown = (e) => startDrag(e, row);
+    // up/down buttons
+    const up = row.querySelector('.up');
+    const down = row.querySelector('.down');
+    if (up) up.onclick = () => { const prev = row.previousElementSibling; if (prev) list.insertBefore(row, prev); };
+    if (down) down.onclick = () => { const next = row.nextElementSibling; if (next) list.insertBefore(next, row); };
+  });
+}
 
-// Watch for DOM mutations (rebind after reorder)
-new MutationObserver(()=> {
-  // rebind controls when DOM child nodes change (preserves handlers)
-  // small debounce:
-  clearTimeout(window.__kiosk_bind_timeout);
-  window.__kiosk_bind_timeout = setTimeout(()=> {
-    // don't re-enable desktop/touch multiple times: remove any existing dragging attributes then rebind
-    svcList.querySelectorAll('.svc-row').forEach(r => r.draggable = true);
-    bindUpDown();
-    svcList.querySelectorAll('.svc-check').forEach(cb => cb.onchange = saveState);
-  }, 50);
-}).observe(svcList, {childList:true, subtree:false});
+// initial bind
+bindRows();
 
-// GET token click
-getBtn.addEventListener('click', async () => {
-  hideResult();
-  const btn = getBtn;
-  const name = nameInput.value.trim();
-  const quer = querSelect.value;
+// expose a helper to get ordered selected services
+function getSelectedOrderedServices() {
+  return Array.from(list.querySelectorAll('.svc-row')).filter(it => it.querySelector('.svc-check').checked).map(it => it.dataset.svc);
+}
+
+// handle submission
+document.getElementById('get').addEventListener('click', async () => {
+  const btn = document.getElementById('get');
+  const name = document.getElementById('name').value.trim();
+  const quer = document.getElementById('quer').value;
   const services = getSelectedOrderedServices();
   if (!services.length) { alert('Please select at least one service'); return; }
 
   btn.disabled = true; btn.classList.add('disabled');
   try {
-    const resp = await fetch(API.replace(/\/$/, '') + '/ticket', {
+    const resp = await fetch(API + '/ticket', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, services, quer_type: quer })
     });
-
-    let payload;
-    try { payload = await resp.json(); } catch (e) { payload = { _raw: await resp.text().catch(()=>'' ) }; }
-
     if (!resp.ok) {
-      const detail = payload && (payload.error || payload.detail || payload._raw || JSON.stringify(payload)) || resp.statusText;
-      showResult('Failed: ' + detail, true);
+      let detail = resp.statusText;
+      try { const j = await resp.json(); detail = j.error || j.detail || JSON.stringify(j); } catch(e){}
+      alert('Failed: ' + detail);
       return;
     }
-
-    const token = String(payload.id || payload.token || '').padStart(3,'0') || '<unknown>';
-    showResult(`Your token: ${token} — Services: ${services.join(' → ')} — Type: ${payload.quer_type || quer}`);
-    nameInput.value = '';
-    saveState();
+    const d = await resp.json();
+    const r = document.getElementById('result');
+    r.style.display = 'block';
+    r.textContent = `Your token: ${String(d.id).padStart(3,'0')} — Services: ${services.join(' → ')} — Type: ${d.quer_type}`;
   } catch (e) {
     console.error('kiosk error', e);
-    showResult('Network error creating token', true);
+    alert('Network error creating token');
   } finally {
     btn.disabled = false; btn.classList.remove('disabled');
   }
 });
+
+// re-bind whenever DOM changes (simple mutation observer so up/down always work after reorder)
+const mo = new MutationObserver(()=> bindRows());
+mo.observe(list, { childList:true, subtree:false });
 </script>
 </body>
 </html>
