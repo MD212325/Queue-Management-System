@@ -5,199 +5,341 @@
   <title>Take a Token (Kiosk)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body{font-family:Arial,Helvetica,sans-serif;padding:18px;background:#fff;color:#111}
-    .card{max-width:520px;margin:12px auto;padding:16px;border-radius:10px;border:1px solid #ddd}
-    h2{margin:0 0 12px}
-    #svc-list{display:block; margin-bottom:8px;}
-    .svc-row{display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;background:#f9f9f9;margin-bottom:6px;cursor:grab; user-select:none}
-    .svc-row.dragging{opacity:0.3}
-    .svc-row .svc-title{flex:1;font-weight:600}
-    .svc-controls button{margin-left:6px}
-    .btn{display:inline-block;padding:10px 12px;border-radius:6px;background:#ffd100;color:#0b4ea2;border:none;font-weight:700;width:100%}
-    .hint{font-size:13px;color:#666;margin-bottom:8px}
+    :root{
+      --card-bg:#fff;
+      --svc-bg:#f9f9f9;
+      --btn-bg:#ffd100;
+      --btn-color:#0b4ea2;
+    }
+    body{font-family:Inter,Arial,Helvetica,sans-serif;margin:0;padding:18px;background:#ffffff;color:#111}
+    .card{max-width:520px;margin:18px auto;padding:18px;border-radius:12px;border:1px solid #eee;background:var(--card-bg);box-shadow:0 6px 20px rgba(0,0,0,0.06);}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    h2{margin:0 0 8px;font-weight:700}
+    .STI-LOGO {text-align:right;margin-bottom:12px}
+    .STI-LOGO img{max-width:80px;height:auto;}
+    label{font-weight:600;margin-top:12px;display:block}
+    input[type="text"], select{width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;margin-top:6px;box-sizing:border-box}
+    .hint{font-size:13px;color:#666;margin-bottom:12px}
+    #svc-list{display:flex;flex-direction:column;gap:8px}
+    .svc-row{
+      display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;background:var(--svc-bg);border:1px solid #e6e6e6;
+      user-select:none; touch-action:none;
+    }
+    .svc-row .svc-handle{width:28px;height:28px;border-radius:6px;background:#fff;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:grab}
+    .svc-row .svc-check{transform:scale(1.1)}
+    .svc-title{flex:1;font-weight:600}
+    .svc-controls{display:flex;gap:6px}
+    .svc-controls button{padding:6px 8px;border-radius:6px;border:1px solid #ddd;background:#fff;cursor:pointer}
+    .btn{display:inline-block;padding:10px 12px;border-radius:8px;background:var(--btn-bg);color:var(--btn-color);border:none;font-weight:700;width:100%;box-shadow:0 3px 8px rgba(0,0,0,0.08)}
     #result{margin-top:12px;padding:10px;border-radius:6px;background:#f1f8ff;color:#002b66;display:none}
     .disabled{opacity:0.6;pointer-events:none}
-    /* ghost */
-    .drag-ghost{box-shadow:0 10px 30px rgba(0,0,0,0.35);transform:scale(1.01);border-radius:6px;pointer-events:none;opacity:0.98}
-    /* placeholder */
-    .svc-placeholder{height:44px;border-radius:6px;background:#e9eef6;margin-bottom:6px;border:2px dashed #c7d6ee}
-    /* small up/down buttons */
-    .small-btn{padding:3px 6px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer}
+
+    /* ghost & placeholder visuals */
+    .ghost {
+      position:fixed;
+      pointer-events:none;
+      z-index:9999;
+      width:calc(var(--row-width,320px));
+      transform:translate(-6px,-6px) scale(1.02);
+      box-shadow:0 10px 30px rgba(0,0,0,0.25);
+      opacity:0.98;
+      transition:transform 120ms ease;
+      border-radius:8px;
+      background:#fff;
+    }
+    .placeholder {
+      height:48px;
+      border-radius:8px;
+      border:2px dashed #cbd5e1;
+      background:linear-gradient(0deg, rgba(255,255,255,0.02), rgba(255,255,255,0.02));
+      margin:0;
+    }
+
     /* responsive */
-    @media (max-width:480px){ .card{margin:8px} }
+    @media (max-width:520px){
+      .card{margin:12px;padding:14px}
+      .svc-row{padding:12px}
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h2>Take a Token</h2>
+  <div class="card" id="kiosk-card">
+    <div class="card-header">
+        <h2>Take a Token</h2>
+        <div class="STI-LOGO">
+            <a href="https://www.sti.edu/" class="STI-LOGO"><img src="sti-logo.png" alt="STI College Logo"/></a>
+        </div>
+    </div>
+
     <div class="hint">Select which services you want, then order them (first → last). You can drag rows, use the ↑/↓ buttons, or touch-and-drag on phones.</div>
 
-    <div id="svc-list" aria-label="Service order list">
-      <div class="svc-row" data-svc="registrar" tabindex="0">
+    <div id="svc-list" aria-label="Services list">
+      <div class="svc-row" data-svc="registrar" draggable="false">
+        <div class="svc-handle" aria-hidden="true">≡</div>
         <input type="checkbox" class="svc-check" checked />
         <div class="svc-title">Registrar</div>
         <div class="svc-controls">
-          <button class="small-btn up">↑</button><button class="small-btn down">↓</button>
+          <button class="up" aria-label="Move up">↑</button>
+          <button class="down" aria-label="Move down">↓</button>
         </div>
       </div>
 
-      <div class="svc-row" data-svc="cashier" tabindex="0">
+      <div class="svc-row" data-svc="cashier" draggable="false">
+        <div class="svc-handle" aria-hidden="true">≡</div>
         <input type="checkbox" class="svc-check" checked />
         <div class="svc-title">Cashier</div>
-        <div class="svc-controls"><button class="small-btn up">↑</button><button class="small-btn down">↓</button></div>
+        <div class="svc-controls">
+          <button class="up">↑</button><button class="down">↓</button>
+        </div>
       </div>
 
-      <div class="svc-row" data-svc="admissions" tabindex="0">
+      <div class="svc-row" data-svc="admissions" draggable="false">
+        <div class="svc-handle" aria-hidden="true">≡</div>
         <input type="checkbox" class="svc-check" checked />
         <div class="svc-title">Admissions</div>
-        <div class="svc-controls"><button class="small-btn up">↑</button><button class="small-btn down">↓</button></div>
+        <div class="svc-controls">
+          <button class="up">↑</button><button class="down">↓</button>
+        </div>
       </div>
 
-      <div class="svc-row" data-svc="records" tabindex="0">
+      <div class="svc-row" data-svc="records" draggable="false">
+        <div class="svc-handle" aria-hidden="true">≡</div>
         <input type="checkbox" class="svc-check" checked />
         <div class="svc-title">Records</div>
-        <div class="svc-controls"><button class="small-btn up">↑</button><button class="small-btn down">↓</button></div>
+        <div class="svc-controls">
+          <button class="up">↑</button><button class="down">↓</button>
+        </div>
       </div>
     </div>
 
-    <label style="display:block;margin-top:10px">Name (optional)</label>
+    <label style="display:block;margin-top:12px">Name (optional)</label>
     <input id="name" type="text" placeholder="Your name" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc">
 
-    <label style="display:block;margin-top:10px">Type</label>
+    <label style="display:block;margin-top:12px">Type</label>
     <select id="quer" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc">
       <option>Student</option><option>Faculty/Staff</option><option>Visitor</option><option>Other</option>
     </select>
 
-    <button id="get" class="btn" style="margin-top:12px">Get Token</button>
+    <button id="get" class="btn" style="margin-top:16px">Get Token</button>
 
     <div id="result"></div>
   </div>
 
 <script>
-const API = 'http://192.168.18.34:4000'; // adjust if needed
+/*
+  Mobile + desktop friendly drag reorder for the service list.
+  Uses Pointer Events where available (touch & mouse unified).
+  Fallback to touch events if pointer is not supported.
+*/
 
+const API = (window.location.port && window.location.port === '5173') ? 'http://192.168.18.34:4000' : window.location.origin;
 const list = document.getElementById('svc-list');
-let dragging = null;
-let ghost = null;
-let placeholder = null;
-let offsetY = 0;
+const btnGet = document.getElementById('get');
+const result = document.getElementById('result');
 
-function createPlaceholder(height){
-  const p = document.createElement('div');
-  p.className = 'svc-placeholder';
-  p.style.height = (height || 44) + 'px';
-  return p;
+/* Utilities */
+function indexOfRow(row) {
+  return Array.from(list.querySelectorAll('.svc-row')).indexOf(row);
 }
-
-function startDrag(ev, item){
-  // ignore if clicking on checkboxes or buttons
-  if (ev.target.closest('input') || ev.target.closest('button')) return;
-  ev.preventDefault();
-  dragging = item;
-  const rect = item.getBoundingClientRect();
-  offsetY = ev.clientY - rect.top;
-
-  // ghost
-  ghost = item.cloneNode(true);
-  ghost.classList.add('drag-ghost');
-  ghost.style.position = 'fixed';
-  ghost.style.left = rect.left + 'px';
-  ghost.style.top = rect.top + 'px';
-  ghost.style.width = rect.width + 'px';
-  ghost.style.zIndex = 9999;
-  document.body.appendChild(ghost);
-
-  // placeholder
-  placeholder = createPlaceholder(rect.height);
-  item.style.visibility = 'hidden';
-  // ensure placeholder in container
-  if (item.nextSibling) list.insertBefore(placeholder, item.nextSibling);
-  else list.appendChild(placeholder);
-
-  item.classList.add('dragging');
-
-  // capture pointer for touch & mouse
-  if (ev.pointerId != null) item.setPointerCapture(ev.pointerId);
-
-  document.addEventListener('pointermove', onPointerMove);
-  document.addEventListener('pointerup', endDrag);
+function swapNodes(a,b){
+  const pa = a.parentNode;
+  const pb = b.parentNode;
+  const na = a.nextSibling === b ? a : a.nextSibling;
+  pb.insertBefore(a, b);
+  pa.insertBefore(b, na);
 }
-
-function onPointerMove(e){
-  if (!dragging || !ghost) return;
-  // move ghost
-  ghost.style.left = (e.clientX - 20) + 'px';
-  ghost.style.top = (e.clientY - offsetY) + 'px';
-
-  // Determine the element under pointer (excluding the ghost)
-  const el = document.elementFromPoint(e.clientX, e.clientY);
-  let row = el ? el.closest('.svc-row') : null;
-
-  // If pointer is over a row, insert placeholder before/after it depending pointerY
-  if (row && list.contains(row) && row !== dragging) {
-    const rRect = row.getBoundingClientRect();
-    const middle = rRect.top + rRect.height/2;
-    if (e.clientY < middle) {
-      if (row.previousSibling !== placeholder) list.insertBefore(placeholder, row);
-    } else {
-      if (row.nextSibling !== placeholder) list.insertBefore(placeholder, row.nextSibling);
-    }
-  } else {
-    // If not over a row, ensure placeholder at end
-    if (placeholder.parentNode !== list) list.appendChild(placeholder);
-  }
-}
-
-function endDrag(e){
-  if (!dragging) return;
-  // insert dragging back into container at placeholder position
-  if (placeholder && placeholder.parentNode === list) {
-    list.insertBefore(dragging, placeholder);
-    placeholder.remove();
-  } else {
-    // fallback: make it visible again
-    dragging.style.visibility = '';
-  }
-  // cleanup
-  dragging.classList.remove('dragging');
-  dragging.style.visibility = '';
-  if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
-  ghost = null;
-  placeholder = null;
-  dragging = null;
-
-  document.removeEventListener('pointermove', onPointerMove);
-  document.removeEventListener('pointerup', endDrag);
-}
-
-function bindRows(){
-  Array.from(list.querySelectorAll('.svc-row')).forEach(row => {
-    row.onpointerdown = (e) => startDrag(e, row);
-    // up/down buttons
-    const up = row.querySelector('.up');
-    const down = row.querySelector('.down');
-    if (up) up.onclick = () => { const prev = row.previousElementSibling; if (prev) list.insertBefore(row, prev); };
-    if (down) down.onclick = () => { const next = row.nextElementSibling; if (next) list.insertBefore(next, row); };
-  });
-}
-
-// initial bind
-bindRows();
-
-// expose a helper to get ordered selected services
-function getSelectedOrderedServices() {
+function getSelectedOrderedServices(){
   return Array.from(list.querySelectorAll('.svc-row')).filter(it => it.querySelector('.svc-check').checked).map(it => it.dataset.svc);
 }
 
-// handle submission
-document.getElementById('get').addEventListener('click', async () => {
-  const btn = document.getElementById('get');
+/* up/down controls */
+function bindUpDown(){
+  list.querySelectorAll('.up').forEach(btn => btn.onclick = e => {
+    const row = e.target.closest('.svc-row');
+    const prev = row.previousElementSibling;
+    if(prev) row.parentNode.insertBefore(row, prev);
+  });
+  list.querySelectorAll('.down').forEach(btn => btn.onclick = e => {
+    const row = e.target.closest('.svc-row');
+    const next = row.nextElementSibling;
+    if(next) row.parentNode.insertBefore(next, row);
+  });
+}
+bindUpDown();
+
+/* Pointer-drag implementation */
+let dragging = null;       // original row DOM element being dragged
+let ghost = null;          // floating clone
+let placeholder = null;    // placeholder element in list
+let offsetY = 0;           // pointer offset within the row
+let rowWidth = 0;
+
+function createGhost(row, pageX, pageY){
+  ghost = row.cloneNode(true);
+  ghost.classList.add('ghost');
+  // measure width of list to size ghost
+  rowWidth = Math.min(520, list.getBoundingClientRect().width || 320);
+  ghost.style.setProperty('--row-width', rowWidth + 'px');
+  ghost.style.width = rowWidth + 'px';
+  ghost.style.left = (pageX - 10) + 'px';
+  ghost.style.top = (pageY - offsetY) + 'px';
+  document.body.appendChild(ghost);
+  // remove interactive behavior from ghost buttons/inputs
+  ghost.querySelectorAll('button,input,select').forEach(el => el.disabled = true);
+}
+
+function createPlaceholder(height){
+  placeholder = document.createElement('div');
+  placeholder.className = 'placeholder';
+  placeholder.style.height = (height)+'px';
+  return placeholder;
+}
+
+function onPointerDown(e){
+  // require handle or row itself as target
+  const handle = e.target.closest('.svc-handle');
+  const row = e.target.closest('.svc-row');
+  if(!row) return;
+
+  // Accept pointer only when handle OR the row itself (so tapping checkbox still works)
+  if(!handle && !e.target.classList.contains('svc-row') && e.target.closest('.svc-check')) {
+    // regular checkbox change will be handled naturally
+    return;
+  }
+
+  // prevent selecting text
+  e.preventDefault();
+  dragging = row;
+  const rect = row.getBoundingClientRect();
+
+  // compute pointer Y offset inside row
+  const pageY = ('touches' in e && e.touches && e.touches[0]) ? e.touches[0].pageY : (e.pageY || e.clientY);
+  offsetY = pageY - rect.top;
+
+  // insert placeholder in place of dragging row
+  const ph = createPlaceholder(rect.height);
+  row.parentNode.insertBefore(ph, row);
+  // hide original row visually (we'll reinsert on drop)
+  row.style.display = 'none';
+
+  // create ghost clone that follows pointer
+  createGhost(row, (e.pageX || (e.touches && e.touches[0].pageX)), pageY);
+
+  // pointer capture if available
+  if(e.pointerId && e.target.setPointerCapture) {
+    try { e.target.setPointerCapture(e.pointerId); } catch(err) {}
+  }
+  // attach move/up handlers to document
+  if(window.PointerEvent){
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
+  } else {
+    // touch fallback
+    document.addEventListener('touchmove', onPointerMove, {passive:false});
+    document.addEventListener('touchend', onPointerUp);
+    document.addEventListener('touchcancel', onPointerUp);
+    document.addEventListener('mousemove', onPointerMove);
+    document.addEventListener('mouseup', onPointerUp);
+  }
+}
+
+function onPointerMove(e){
+  if(!dragging || !ghost || !placeholder) return;
+  // prevent page scroll while dragging on touch
+  if(e.cancelable) e.preventDefault();
+
+  const touch = (e.touches && e.touches[0]) || e;
+  const pageY = touch.pageY;
+  const pageX = touch.pageX;
+  // move ghost
+  ghost.style.left = (pageX - 10) + 'px';
+  ghost.style.top = (pageY - offsetY) + 'px';
+
+  // find the row to insert placeholder before
+  const rows = Array.from(list.querySelectorAll('.svc-row')).filter(r => r !== dragging);
+  let inserted = false;
+  for(const r of rows){
+    const rect = r.getBoundingClientRect();
+    const mid = rect.top + rect.height/2;
+    if(pageY < mid){
+      // place placeholder before r
+      if(placeholder.nextSibling !== r) {
+        list.insertBefore(placeholder, r);
+      }
+      inserted = true;
+      break;
+    }
+  }
+  if(!inserted){
+    // put placeholder at end
+    if(list.lastElementChild !== placeholder) list.appendChild(placeholder);
+  }
+}
+
+function onPointerUp(e){
+  if(!dragging) return;
+  // remove ghost and insert original row at placeholder position
+  if(ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+  if(placeholder && placeholder.parentNode){
+    placeholder.parentNode.insertBefore(dragging, placeholder);
+    placeholder.parentNode.removeChild(placeholder);
+  } else {
+    // fallback: append
+    list.appendChild(dragging);
+  }
+  dragging.style.display = ''; // restore
+  // cleanup
+  ghost = null; placeholder = null; dragging = null; offsetY = 0;
+
+  if(window.PointerEvent){
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', onPointerUp);
+    document.removeEventListener('pointercancel', onPointerUp);
+  } else {
+    document.removeEventListener('touchmove', onPointerMove);
+    document.removeEventListener('touchend', onPointerUp);
+    document.removeEventListener('touchcancel', onPointerUp);
+    document.removeEventListener('mousemove', onPointerMove);
+    document.removeEventListener('mouseup', onPointerUp);
+  }
+
+  // rebind up/down because DOM moved (buttons still function)
+  bindUpDown();
+}
+
+/* Attach pointerdown / touchstart to each handle and row title area */
+function bindDrag(){
+  list.querySelectorAll('.svc-row').forEach(row => {
+    // prefer pointer events when available
+    const handle = row.querySelector('.svc-handle') || row;
+    if(window.PointerEvent){
+      handle.addEventListener('pointerdown', onPointerDown);
+    } else {
+      // touch and mouse fallback
+      handle.addEventListener('touchstart', function(e){ onPointerDown(e); }, {passive:false});
+      handle.addEventListener('mousedown', function(e){ onPointerDown(e); });
+    }
+  });
+}
+bindDrag();
+
+/* After reordering (drag end) the DOM updates so new nodes need listeners;
+   we re-bind on every drag completion by calling bindDrag again inside onPointerUp (done already via bindUpDown),
+   and ensure bindDrag is idempotent by not duplicating listeners in practice because we attach only on init.
+   If you dynamically add rows at runtime, call bindDrag() again afterwards.
+*/
+
+/* GET TOKEN (submit ordered services to server) */
+btnGet.addEventListener('click', async function(){
+  const btn = btnGet;
   const name = document.getElementById('name').value.trim();
   const quer = document.getElementById('quer').value;
   const services = getSelectedOrderedServices();
   if (!services.length) { alert('Please select at least one service'); return; }
 
-  btn.disabled = true; btn.classList.add('disabled');
+  btn.disabled = true;
+  btn.classList.add('disabled');
   try {
     const resp = await fetch(API + '/ticket', {
       method: 'POST',
@@ -211,20 +353,31 @@ document.getElementById('get').addEventListener('click', async () => {
       return;
     }
     const d = await resp.json();
-    const r = document.getElementById('result');
-    r.style.display = 'block';
-    r.textContent = `Your token: ${String(d.id).padStart(3,'0')} — Services: ${services.join(' → ')} — Type: ${d.quer_type}`;
+    result.style.display = 'block';
+    result.textContent = `Your token: ${String(d.id).padStart(3,'0')} — Services: ${services.join(' → ')} — Type: ${d.quer_type}`;
   } catch (e) {
     console.error('kiosk error', e);
     alert('Network error creating token');
   } finally {
-    btn.disabled = false; btn.classList.remove('disabled');
+    btn.disabled = false;
+    btn.classList.remove('disabled');
   }
 });
 
-// re-bind whenever DOM changes (simple mutation observer so up/down always work after reorder)
-const mo = new MutationObserver(()=> bindRows());
-mo.observe(list, { childList:true, subtree:false });
+/* --- small improvements: allow keyboard move with +/- (optional) --- */
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    // try to move focused .svc-row if one is focused
+    const focused = document.activeElement.closest && document.activeElement.closest('.svc-row');
+    if(!focused) return;
+    if(e.key === 'ArrowUp') {
+      const prev = focused.previousElementSibling; if(prev) focused.parentNode.insertBefore(focused, prev);
+    } else {
+      const next = focused.nextElementSibling; if(next) focused.parentNode.insertBefore(next, focused);
+    }
+    bindUpDown();
+  }
+});
 </script>
 </body>
 </html>
