@@ -1,119 +1,99 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <title>Queue Display</title>
+  <meta charset="utf-8" />
+  <title>Registrar Queue Display</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body{background:#0b0b0b;color:#fff;font-family:sans-serif;padding:18px}
-    .cols{display:flex;gap:18px}
-    .col{background:#111;padding:12px;border-radius:10px;min-width:260;flex:1;box-shadow:0 8px 30px rgba(0,0,0,0.6)}
-    .called{background:linear-gradient(90deg,#1f6bff,#f9d34b);color:#fff;padding:18px;border-radius:8px;font-weight:700;display:flex;align-items:center;gap:14px}
-    .token{font-size:64px;font-weight:800}
-    .meta{font-size:18px}
-    .list{margin-top:12px}
-    .row{display:flex;justify-content:space-between;padding:10px;border-radius:6px;background:rgba(255,255,255,0.03);margin-bottom:8px}
-    .debug{position:fixed;left:10px;bottom:10px;right:10px;max-height:200px;overflow:auto;background:#000;padding:8px;color:#fff;border-radius:6px;font-size:12px}
+    body{margin:0;background:#0b0b0b;color:#fff;font-family:Arial,Helvetica,sans-serif}
+    .wrap{padding:30px;display:flex;gap:24px}
+    h1{font-size:44px;margin:0 0 12px 20px}
+    .col{background:#0f1a1c;border-radius:10px;padding:12px;width:26%;box-shadow:var(--panel-shadow)}
+    .col h3{text-align:center;margin:0 0 8px}
+    .panel-called{background: linear-gradient(90deg,#6fb3ff,#ffd25b); color:#03203a; padding:16px; border-radius:8px; margin-bottom:12px}
+    .panel-called .token{font-size:56px;font-weight:700}
+    .panel-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#071014;border-radius:6px;margin-bottom:8px}
+    .panel-row .token-small{width:60px;font-weight:700}
+    .no-tokens{color:#98a3a7;padding:18px;text-align:center}
   </style>
 </head>
 <body>
-  <h1>Registrar Queue Display</h1>
-  <div id="cols" class="cols"></div>
-  <div id="debug" class="debug">Debug messages will appear here</div>
+  <h1 style="padding:18px 30px;margin:0">Registrar Queue Display</h1>
+  
+  <div class="wrap" id="wrap"></div>
 
 <script>
-const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://127.0.0.1:4000' : (window.DISPLAY_API || 'http://192.168.18.34:4000');
-const SERVICES = [
-  { key:'registrar', label:'Registrar' },
-  { key:'cashier', label:'Cashier' },
-  { key:'admissions', label:'Admissions' },
-  { key:'records', label:'Records' }
-];
-const cols = document.getElementById('cols');
-const dbg = document.getElementById('debug');
+const API = location.origin.includes('5173') ? 'http://192.168.18.34:4000' : (location.protocol + '//' + location.host);
 
-function log(...a){ dbg.innerText = new Date().toLocaleTimeString() + ' — ' + a.map(x=>typeof x==='object'?JSON.stringify(x):String(x)).join(' ') + '\n' + dbg.innerText; }
+// fetch and render
+async function fetchQueue(){
+  try {
+    const r = await fetch(API + '/queue');
+    const data = await r.json();
+    render(data || []);
+  } catch(e) {
+    console.error('fetchQueue', e);
+  }
+}
 
-function render(queue){
-  cols.innerHTML = '';
-  const map = {};
-  queue.forEach(t => map[t.id] = t);
+function render(tickets){
+  const wrap = document.getElementById('wrap');
+  wrap.innerHTML = '';
+  const services = ['registrar','cashier','admissions','records'];
+  services.forEach(svc=>{
+    const col = document.createElement('div'); col.className='col';
+    const h = document.createElement('h3'); h.textContent = svc.charAt(0).toUpperCase() + svc.slice(1);
+    col.appendChild(h);
 
-  SERVICES.forEach(svc => {
-    const container = document.createElement('div');
-    container.className = 'col';
-    const title = document.createElement('div');
-    title.style.textAlign='center';
-    title.style.fontWeight='700';
-    title.style.marginBottom='8px';
-    title.innerText = svc.label;
-    container.appendChild(title);
+    // enrich tickets
+    const enriched = tickets.map(t => {
+      let svs = [];
+      try { svs = Array.isArray(t.services) ? t.services : JSON.parse(t.services||'[]'); } catch(e){ svs=[]; }
+      const idx = Number(t.service_index||0);
+      const current = svs[idx] || null;
+      const displayToken = (svc[0]?.toUpperCase() || '') + String(t.id).padStart(3,'0');
+      return {...t, servicesArr:svs, current_service: current, displayToken};
+    });
 
-    // find called for this service
-    const called = queue.find(t => t.status==='called' && t.called_service===svc.key);
-    // if no called, find the first waiting whose current_service equals svc.key
-    const waitingFirst = queue.find(t => t.status==='waiting' && (Array.isArray(t.services) ? t.services[t.service_index||0] : (t.services && JSON.parse(t.services||'[]')[t.service_index||0])) === svc.key);
-
+    const called = enriched.find(t => t.status === 'called' && t.called_service === svc);
     if (called) {
-      const card = document.createElement('div');
-      card.className = 'called';
-      const token = document.createElement('div'); token.className='token'; token.innerText = called.displayToken || String(called.id).padStart(3,'0');
-      const meta = document.createElement('div'); meta.className='meta'; meta.innerHTML = `<div>${called.name || ''}</div><div style="opacity:0.9">${called.quer_type || ''} • called</div>`;
-      card.appendChild(token); card.appendChild(meta);
-      container.appendChild(card);
-    } else if (waitingFirst) {
-      const card = document.createElement('div');
-      card.className = 'called';
-      card.style.background='linear-gradient(90deg,#3b82f6,#60a5fa)';
-      const token = document.createElement('div'); token.className='token'; token.innerText = waitingFirst.displayToken || String(waitingFirst.id).padStart(3,'0');
-      const meta = document.createElement('div'); meta.className='meta'; meta.innerHTML = `<div>${waitingFirst.name || ''}</div><div style="opacity:0.9">${waitingFirst.quer_type || ''} • waiting</div>`;
-      card.appendChild(token); card.appendChild(meta); container.appendChild(card);
-    } else {
-      const none = document.createElement('div'); none.style.opacity=0.6; none.style.padding=12; none.innerText='No tokens';
-      container.appendChild(none);
+      const c = document.createElement('div'); c.className='panel-called';
+      const tok = document.createElement('div'); tok.className='token'; tok.textContent = called.displayToken;
+      const name = document.createElement('div'); name.textContent = called.name || 'No name';
+      const meta = document.createElement('div'); meta.style.opacity = 0.9; meta.textContent = (called.quer_type || '') + ' • ' + (called.status || '');
+      c.appendChild(tok); c.appendChild(name); c.appendChild(meta);
+      col.appendChild(c);
     }
 
-    // below: small waiting list (first 10) — but display only minimal rows
-    const list = document.createElement('div'); list.className='list';
-    const waitingRows = queue.filter(t => (t.status==='waiting' || t.status==='hold') && t.current_service===svc.key).slice(0,10);
-    waitingRows.forEach(t => {
-      const row = document.createElement('div'); row.className='row';
-      row.innerHTML = `<div style="font-weight:700">${String(t.id).padStart(3,'0')}</div><div style="opacity:0.9">${t.name||'—'}</div><div style="opacity:0.9">${t.status}</div>`;
-      list.appendChild(row);
-    });
-    container.appendChild(list);
+    // waiting list for this service (exclude called)
+    const waiting = enriched.filter(t => (t.status === 'waiting' || t.status === 'hold') && t.current_service === svc);
+    if (waiting.length === 0) {
+      if(!called) {
+        const n = document.createElement('div'); n.className='no-tokens'; n.textContent = 'No tokens';
+        col.appendChild(n);
+      }
+    } else {
+      waiting.forEach(w=>{
+        // small list row
+        const row = document.createElement('div'); row.className='panel-row';
+        const tk = document.createElement('div'); tk.className='token-small'; tk.textContent = String(w.id).padStart(3,'0');
+        const nm = document.createElement('div'); nm.style.flex = '1'; nm.textContent = w.name || '—';
+        const st = document.createElement('div'); st.textContent = w.status;
+        row.appendChild(tk); row.appendChild(nm); row.appendChild(st);
+        col.appendChild(row);
+      });
+    }
 
-    cols.appendChild(container);
+    wrap.appendChild(col);
   });
 }
 
-async function fetchQueue(){
-  try {
-    const r = await fetch(`${API}/queue`);
-    const data = await r.json().catch(()=>[]);
-    // normalize
-    const parsed = (Array.isArray(data) ? data : []).map(t => {
-      const services = Array.isArray(t.services) ? t.services : (function(){ try { return JSON.parse(t.services||'[]'); } catch(e){ return []; } })();
-      const idx = Number(t.service_index || 0);
-      const current_service = Array.isArray(services) && services[idx] ? services[idx] : (t.called_service || '');
-      const prefixMap = { registrar:'R', cashier:'C', admissions:'A', records:'D' };
-      const displayToken = (t.called_service ? (prefixMap[t.called_service]||'') : '') + String(t.id).padStart(3,'0');
-      return {...t, services, service_index: idx, current_service, displayToken};
-    });
-    render(parsed);
-    log('Rendered ' + parsed.length + ' tickets');
-  } catch(e){ console.error(e); log('fetch error', e.message); }
-}
-
-// SSE updates to refresh display when backend emits events
-const es = new EventSource(`${API}/events`);
-['created','called','served','moved','reassigned','hold','recalled','deleted'].forEach(evt => {
-  es.addEventListener(evt, e=>{ log('SSE event', evt, e.data); fetchQueue(); });
-});
-es.onerror = (e) => { log('SSE error'); };
-
 fetchQueue();
-setInterval(fetchQueue, 8000); // fallback polling
-
+const es = new EventSource(API + '/events');
+['created','called','served','moved','reassigned','deleted','hold','recalled'].forEach(evt=>{
+  es.addEventListener(evt, ()=>fetchQueue());
+});
+es.onerror = ()=> { setTimeout(fetchQueue, 1500); };
 </script>
 </body>
 </html>
