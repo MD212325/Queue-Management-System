@@ -1,6 +1,6 @@
 # Queue Display System
 
-A simple queuing system with a **ticket generator** and a **queue display**.  
+A simple queuing system with a **ticket generator**, a **queue display**, and a **kiosk for quers**.  
 Built with **Vite + React** (frontend) and a lightweight backend (HTML/JS/CSS).  
 
 ---
