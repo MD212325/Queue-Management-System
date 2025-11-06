@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>Take a Token (Kiosk)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel"icon" href="./sti-yellow-background.png"/>
+  <link rel="icon" href="favicon.ico" />
   <style>
     :root{
       --card-bg:#fff;
@@ -35,8 +35,6 @@
     #resultBar{margin-top:12px;padding:10px;border-radius:6px;background:linear-gradient(90deg,#ffd66b,#bfe0ff);color:#002b66;display:none; font-weight:600}
     #statusBox{margin-top:12px;padding:10px;border-radius:6px;background:#f1f8ff;color:#002b66;display:none}
     .disabled{opacity:0.6;pointer-events:none}
-
-    /* ghost & placeholder visuals */
     .ghost {
       position:fixed;
       pointer-events:none;
@@ -72,8 +70,6 @@
       display:none;
       font-weight:600;
     }
-
-    /* responsive */
     @media (max-width:520px){
       .card{margin:12px;padding:14px}
       .svc-row{padding:12px}
@@ -191,7 +187,7 @@ function bindUpDown(){
   list.querySelectorAll('.down').forEach(btn => btn.onclick = e => {
     const row = e.target.closest('.svc-row');
     const next = row.nextElementSibling;
-    if(next) row.parentNode.insertBefore(next, row);
+    if(next) row.parentNode.insertBefore(row, row.nextElementSibling.nextSibling ? row.nextElementSibling.nextSibling : next);
   });
 }
 bindUpDown();
@@ -221,8 +217,6 @@ function onPointerDown(e){
   const handle = e.target.closest('.svc-handle');
   const row = e.target.closest('.svc-row');
   if(!row) return;
-
-  // allow checkbox click without starting drag
   if(!handle && e.target.closest('.svc-check')) return;
 
   e.preventDefault();
@@ -323,9 +317,11 @@ function normalizeIndex(service_index, services) {
   if (typeof service_index === 'undefined' || service_index === null) return undefined;
   const n = Number(service_index);
   if (!Number.isFinite(n)) return undefined;
+  // If the server uses 1-based numbering (common), treat 1..N as 0..N-1
   if (Array.isArray(services) && n >= 1 && n <= services.length) {
     return Math.max(0, n - 1);
   }
+  // otherwise coerce to integer fallback
   return Math.max(0, Math.floor(n));
 }
 
@@ -370,6 +366,16 @@ function beep(){
   }catch(e){}
 }
 
+/* -- small helper to build API URLs consistently (keeps previous behavior) -- */
+function apiUrl(path){
+  if(!API) return path;
+  const trimmed = String(API).trim();
+  if(/^https?:\/\//i.test(trimmed)) {
+    return trimmed.replace(/\/$/,'') + (path.startsWith('/') ? path : ('/' + path));
+  }
+  return (window.location.origin.replace(/\/$/,'') + (trimmed.startsWith('/') ? trimmed : '')).replace(/\/$/,'') + (path.startsWith('/') ? path : ('/' + path));
+}
+
 /* ------------------ create ticket ------------------ */
 btnGet.addEventListener('click', async function(){
   if(loadTicket()){
@@ -384,7 +390,7 @@ btnGet.addEventListener('click', async function(){
 
   btn.disabled = true; btn.classList.add('disabled');
   try {
-    const resp = await fetch(API + '/ticket', {
+    const resp = await fetch(apiUrl('/ticket'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, services, quer_type: quer })
@@ -392,15 +398,18 @@ btnGet.addEventListener('click', async function(){
     const d = await (resp.ok ? resp.json() : resp.json().catch(()=>({error:resp.statusText})));
     if (!resp.ok) { alert('Failed: ' + (d.error || d.detail || resp.statusText)); return; }
 
-    // normalize server-provided index (handles 1-based vs 0-based)
-    const normalizedIndex = normalizeIndex(d.service_index, d.services || services);
+    // prefer server-provided services if present; otherwise use chosen services
+    const srvServices = Array.isArray(d.services) ? d.services : services;
+
+    // attempt to normalize service_index if server returned one
+    const normalizedIndex = normalizeIndex(d.service_index, srvServices);
 
     const ticket = {
       id: d.id,
-      services: Array.isArray(d.services) ? d.services : (services || []),
+      services: srvServices,
       quer_type: d.quer_type || quer,
       service_index: (typeof normalizedIndex !== 'undefined') ? normalizedIndex : 0,
-      current_service: (Array.isArray(d.services) && d.services.length) ? ( (typeof normalizedIndex !== 'undefined') ? d.services[normalizedIndex] : d.services[0]) : (services[0] || null),
+      current_service: (Array.isArray(srvServices) && srvServices.length) ? ( (typeof normalizedIndex !== 'undefined') ? srvServices[normalizedIndex] : srvServices[0]) : (services[0] || null),
       status: d.status || 'waiting',
       created_at: d.created_at || null
     };
@@ -419,21 +428,21 @@ btnGet.addEventListener('click', async function(){
 /* ------------------ cancel ticket flow ------------------ */
 async function cancelTicketFlow(id){
   try {
-    let res = await fetch(`${API}/ticket/${id}`, { method: 'DELETE' });
+    let res = await fetch(apiUrl(`/ticket/${id}`), { method: 'DELETE' });
     if(res.ok){
       showToast('Ticket cancelled');
       clearTicket(); setUIForTicket(null);
       return true;
     }
 
-    res = await fetch(`${API}/ticket/${id}/delete`, { method: 'POST' });
+    res = await fetch(apiUrl(`/ticket/${id}/delete`), { method: 'POST' });
     if(res.ok){
       showToast('Ticket cancelled (fallback)');
       clearTicket(); setUIForTicket(null);
       return true;
     }
 
-    res = await fetch(`${API}/ticket/${id}/cancel`, { method: 'POST' });
+    res = await fetch(apiUrl(`/ticket/${id}/cancel`), { method: 'POST' });
     if(res.ok){
       showToast('Ticket cancelled (cancel endpoint)');
       clearTicket(); setUIForTicket(null);
@@ -467,13 +476,14 @@ cancelBtn.addEventListener('click', async () => {
 /* ------------------ SSE listening ------------------ */
 function startSSEForKiosk(){
   try {
-    const es = new EventSource(`${API}/events`);
+    const es = new EventSource(apiUrl('/events'));
     es.addEventListener('open', () => console.log('SSE open'));
     es.addEventListener('error', (e) => console.warn('SSE error', e));
 
     const handleRaw = (e, type) => {
       let payload = null;
       try { payload = typeof e.data === 'string' ? JSON.parse(e.data) : e.data } catch(err) { payload = null; }
+      console.log('SSE event', type, payload);
       handleEventPayload(payload, type);
     };
 
@@ -488,52 +498,63 @@ function startSSEForKiosk(){
   }
 }
 
-/* ------------------ helper: fetch authoritative ticket record ------------------ */
-async function fetchTicketFromServer(id){
-  try {
-    const r = await fetch(`${API}/ticket/${id}`);
-    if(!r.ok) return null;
-    const data = await r.json();
-    return data;
-  } catch(e){
-    console.warn('ticket fetch failed', e);
-    return null;
-  }
-}
-
-/* ------------------ robust event handler (uses normalized index & server fetch on served) ------------------ */
+/* ------------------ robust event handler (payload-first) ------------------ */
 async function handleEventPayload(payload, type){
   if(!payload || typeof payload.id === 'undefined') return;
   const t = loadTicket();
   if(!t) return;
   if(payload.id !== t.id) return;
 
-  // incorporate server services if present
-  if(Array.isArray(payload.services)) t.services = payload.services;
+  console.log('Handling SSE for our ticket:', type, payload);
 
-  // normalize index included in payload if present
-  if(typeof payload.service_index !== 'undefined') {
-    const normalized = normalizeIndex(payload.service_index, payload.services || t.services);
-    if(typeof normalized !== 'undefined') t.service_index = normalized;
+  // Prefer explicit service names from the payload:
+  // - payload.to (server indicates next service after move/served)
+  // - payload.service or payload.called_service (called notification)
+  // - payload.services (authoritative list)
+  // - payload.service_index (as fallback)
+  if(Array.isArray(payload.services)) {
+    t.services = payload.services;
   }
 
-  // update called_service/status if present
-  if(payload.called_service) t.called_service = payload.called_service;
+  // If server gave a 'to' field, that is the next/current waiting service
+  if(payload.to) {
+    t.current_service = String(payload.to);
+    // If we have services array, update index to match the 'to' service if possible
+    if(Array.isArray(t.services)) {
+      const idx = t.services.indexOf(t.current_service);
+      if(idx !== -1) t.service_index = idx;
+    }
+  } else if(payload.service || payload.called_service) {
+    // many events use 'service' or 'called_service' to indicate where the ticket is called
+    const svcName = payload.service || payload.called_service;
+    t.current_service = String(svcName);
+    if(Array.isArray(t.services)){
+      const idx = t.services.indexOf(t.current_service);
+      if(idx !== -1) t.service_index = idx;
+    }
+  } else if(typeof payload.service_index !== 'undefined') {
+    // fallback: normalize index
+    const normalized = normalizeIndex(payload.service_index, payload.services || t.services || []);
+    if(typeof normalized !== 'undefined') {
+      t.service_index = normalized;
+      if(Array.isArray(t.services)) t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)];
+    }
+  }
+
+  // update status/called_service if provided
   if(payload.status) t.status = payload.status;
+  if(payload.called_service) t.called_service = payload.called_service;
 
-  // ensure a default index
+  // ensure sensible defaults
   if(typeof t.service_index === 'undefined') t.service_index = 0;
-
-  // recompute current_service after normalization
-  if(Array.isArray(t.services) && t.services.length && typeof t.service_index !== 'undefined'){
-    t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)] || null;
-  }
+  if(!t.current_service && Array.isArray(t.services) && t.services.length) t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)];
 
   saveTicket(t);
   setUIForTicket(t);
 
+  // Now behavior per event type:
   if(type === 'called'){
-    const svc = payload.called_service || t.current_service || 'service';
+    const svc = payload.called_service || payload.service || t.current_service || 'service';
     showToast(`Your token ${String(t.id).padStart(3,'0')} is called at ${svc}`);
     beep(); try{ if(navigator.vibrate) navigator.vibrate([80,40,80]); }catch(e){}
     await updatePositionForTicket();
@@ -541,12 +562,7 @@ async function handleEventPayload(payload, type){
   }
 
   if(type === 'moved' || type === 'reassigned'){
-    // the server should ideally send service_index; if it did we already normalized above
-    if(Array.isArray(t.services) && typeof t.service_index !== 'undefined'){
-      t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)];
-    }
-    saveTicket(t);
-    setUIForTicket(t);
+    // server told us the ticket moved; if payload.to exists we already set it above
     showToast(`Your ticket moved to ${t.current_service || 'next service'}`);
     beep(); try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
     await updatePositionForTicket();
@@ -554,12 +570,42 @@ async function handleEventPayload(payload, type){
   }
 
   if(type === 'served'){
-    // primary approach: if payload contains a valid normalized service_index, use it
-    let normalized = (typeof payload.service_index !== 'undefined') ? normalizeIndex(payload.service_index, payload.services || t.services) : undefined;
-    if(typeof normalized !== 'undefined'){
-      t.service_index = normalized;
-      // if there are remaining services after this index then it's not final
-      if(Array.isArray(t.services) && t.service_index < (t.services.length - 1)){
+    // If server indicated 'to' (next service) then the ticket is not final: set current to that 'to'
+    if(payload.to){
+      t.current_service = payload.to;
+      if(Array.isArray(t.services)){
+        const idx = t.services.indexOf(t.current_service);
+        t.service_index = idx !== -1 ? idx : t.service_index;
+      }
+      t.status = 'waiting';
+      saveTicket(t);
+      setUIForTicket(t);
+      showToast(`Moved to ${t.current_service}`);
+      beep(); try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
+      await updatePositionForTicket();
+      return;
+    }
+
+    // If no 'to' and server status says final -> clear
+    if(payload.status === 'served' || payload.status === 'completed' || payload.status === 'done' || payload.final === true){
+      showToast('Your ticket has been served. Thank you!');
+      beep(); try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
+      clearTicket();
+      setTimeout(()=> setUIForTicket(null), 400);
+      return;
+    }
+
+    // Fallback: if services array exists and our service_index is last -> final
+    if(Array.isArray(t.services)){
+      if(typeof t.service_index === 'undefined' || t.service_index >= (t.services.length - 1)){
+        showToast('Your ticket has been served. Thank you!');
+        beep(); try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
+        clearTicket();
+        setTimeout(()=> setUIForTicket(null), 400);
+        return;
+      } else {
+        // Otherwise move to the next index (defensive)
+        t.service_index = Math.min(t.service_index + 1, t.services.length - 1);
         t.current_service = t.services[t.service_index];
         t.status = 'waiting';
         saveTicket(t);
@@ -568,58 +614,10 @@ async function handleEventPayload(payload, type){
         beep(); try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
         await updatePositionForTicket();
         return;
-      } else {
-        // service_index points to last service -> final
-        showToast('Your ticket has been served. Thank you!');
-        beep(); try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
-        clearTicket();
-        setTimeout(()=> setUIForTicket(null), 400);
-        return;
       }
     }
 
-    // fallback: fetch the authoritative ticket from the server to see current state/index
-    const serverTicket = await fetchTicketFromServer(t.id);
-    if(serverTicket){
-      // server may use service_index 1-based; normalize it
-      const srvIndex = (typeof serverTicket.service_index !== 'undefined') ? normalizeIndex(serverTicket.service_index, serverTicket.services || t.services) : undefined;
-      if(typeof srvIndex !== 'undefined') {
-        t.services = Array.isArray(serverTicket.services) ? serverTicket.services : t.services;
-        t.service_index = srvIndex;
-        t.current_service = (Array.isArray(t.services) && t.services.length) ? t.services[Math.min(t.service_index, t.services.length - 1)] : null;
-        // if there are more services pending, show moved; otherwise treat as final
-        if(Array.isArray(t.services) && t.service_index < (t.services.length - 1)){
-          t.status = 'waiting';
-          saveTicket(t);
-          setUIForTicket(t);
-          showToast(`Moved to ${t.current_service}`);
-          beep(); try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
-          await updatePositionForTicket();
-          return;
-        } else {
-          // final
-          showToast('Your ticket has been served. Thank you!');
-          beep(); try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
-          clearTicket();
-          setTimeout(()=> setUIForTicket(null), 400);
-          return;
-        }
-      } else {
-        // server didn't provide index — check status fields to decide
-        if(serverTicket.status === 'served' || serverTicket.status === 'completed' || serverTicket.status === 'done'){
-          showToast('Your ticket has been served. Thank you!');
-          clearTicket();
-          setTimeout(()=> setUIForTicket(null), 400);
-          return;
-        }
-        // conservative: keep ticket and wait for a moved/reassigned event
-        showToast('One stage served — waiting for next update...');
-        saveTicket(t); setUIForTicket(t);
-        return;
-      }
-    }
-
-    // if fetch failed, conservative behavior: keep the ticket and wait for next event
+    // Last fallback: keep the ticket and wait for next event
     showToast('Service recorded. Waiting for next update...');
     return;
   }
@@ -631,7 +629,7 @@ async function handleEventPayload(payload, type){
     return;
   }
 
-  // generic fallback: update and refresh position
+  // generic fallback
   saveTicket(t); setUIForTicket(t); await updatePositionForTicket();
 }
 
@@ -640,8 +638,11 @@ async function updatePositionForTicket(){
   const t = loadTicket();
   if(!t) return;
   try {
-    const r = await fetch(`${API}/queue`);
-    if(!r.ok) return;
+    const r = await fetch(apiUrl('/queue'));
+    if(!r.ok){
+      console.warn('updatePositionForTicket: /queue returned', r.status);
+      return;
+    }
     const q = await r.json();
     if(!Array.isArray(q)) return;
 
@@ -653,7 +654,7 @@ async function updatePositionForTicket(){
         let itemServices = Array.isArray(item.services) ? item.services : (typeof item.services === 'string' ? JSON.parse(item.services||'[]') : []);
         let itemIndexRaw = (typeof item.service_index !== 'undefined' ? item.service_index : undefined);
         let itemIndex = (typeof itemIndexRaw !== 'undefined') ? normalizeIndex(itemIndexRaw, itemServices) : 0;
-        const itemCur = (Array.isArray(itemServices) && itemServices.length > itemIndex) ? itemServices[itemIndex] : (item.called_service || null);
+        const itemCur = (Array.isArray(itemServices) && itemServices.length > itemIndex) ? itemServices[itemIndex] : (item.called_service || item.service || null);
         if(!itemCur || itemCur !== svc) continue;
         if(item.id === t.id) continue;
         const itemKey = item.created_at ? new Date(item.created_at).getTime() : (item.id || 0);
@@ -663,7 +664,9 @@ async function updatePositionForTicket(){
     t._position = position;
     saveTicket(t);
     setUIForTicket(t);
-  } catch(err){}
+  } catch(err){
+    console.warn('updatePositionForTicket failed', err);
+  }
 }
 
 /* ------------------ initialization ------------------ */
