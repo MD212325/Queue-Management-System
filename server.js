@@ -1,3 +1,4 @@
+// server.js (updated)
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
@@ -14,7 +15,6 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const STAFF_KEY = process.env.STAFF_KEY || 'STI-QUEUE-KEY';
-
 
 // Middleware to protect staff routes
 function requireStaff(req, res, next) {
@@ -47,6 +47,7 @@ const db = new sqlite3.Database(DB_FILE, (err) => {
 
 // Initialize DB schema (safe to run every startup)
 db.serialize(() => {
+  // create table with cancel columns included (if table already exists it's ignored)
   db.run(`CREATE TABLE IF NOT EXISTS tickets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
@@ -58,10 +59,28 @@ db.serialize(() => {
     service_arrival TEXT,
     created_at TEXT,
     updated_at TEXT,
-    served_at TEXT
+    served_at TEXT,
+    -- cancel request fields
+    cancel_requested INTEGER DEFAULT 0,
+    cancel_reason TEXT DEFAULT '',
+    cancel_requested_at TEXT DEFAULT ''
   )`);
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_tickets_status_arrival ON tickets (status, service_arrival)`);
+
+  // If DB already existed without cancel columns, attempt to add them (ignore errors)
+  const addCols = [
+    `ALTER TABLE tickets ADD COLUMN cancel_requested INTEGER DEFAULT 0`,
+    `ALTER TABLE tickets ADD COLUMN cancel_reason TEXT DEFAULT ''`,
+    `ALTER TABLE tickets ADD COLUMN cancel_requested_at TEXT DEFAULT ''`
+  ];
+  addCols.forEach(sql => {
+    db.run(sql, (err) => {
+      if (err) {
+        // probably column already exists; ignore
+      }
+    });
+  });
 });
 
 // Utility: emit SSE event
@@ -79,15 +98,12 @@ function emitEvent(eventName, payload) {
 
 // SSE endpoint
 app.get('/events', (req, res) => {
-  // Set headers for SSE
   res.set({
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive'
   });
   res.flushHeaders && res.flushHeaders();
-
-  // Send a small comment to keep connection alive in some proxies
   res.write(':ok\n\n');
 
   const clientId = Date.now() + Math.random();
@@ -95,7 +111,6 @@ app.get('/events', (req, res) => {
   sseClients.push(client);
   console.log('SSE client connected:', clientId, 'total:', sseClients.length);
 
-  // Remove client on close
   req.on('close', () => {
     const idx = sseClients.findIndex(c => c.id === clientId);
     if (idx !== -1) sseClients.splice(idx, 1);
@@ -103,19 +118,21 @@ app.get('/events', (req, res) => {
   });
 });
 
+// helper to parse services column
+function parseServicesField(r) {
+  try { return Array.isArray(r.services) ? r.services : JSON.parse(r.services || '[]'); }
+  catch(e){ return []; }
+}
+
 // Get full queue (all tickets)
 app.get('/queue', (req, res) => {
   db.all(`SELECT * FROM tickets ORDER BY id ASC`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'DB error' });
 
     const parsed = rows.map(r => {
-      // parse services JSON safely
-      let services = [];
-      try { services = Array.isArray(r.services) ? r.services : JSON.parse(r.services || '[]'); } catch (e) { services = []; }
-
+      const services = parseServicesField(r);
       const idx = Number(r.service_index || 0);
       const current_service = (services && services[idx]) ? services[idx] : null;
-
       const tokenNumeric = String(r.id).padStart(3, '0');
       const prefix = SERVICE_PREFIX[current_service] || '';
       const displayToken = prefix + tokenNumeric;
@@ -125,11 +142,42 @@ app.get('/queue', (req, res) => {
         services,
         current_service,
         token: tokenNumeric,
-        displayToken
+        displayToken,
+        cancel_requested: Boolean(Number(r.cancel_requested || 0)),
+        cancel_reason: r.cancel_reason || '',
+        cancel_requested_at: r.cancel_requested_at || ''
       };
     });
 
     res.json(parsed);
+  });
+});
+
+// Get a single ticket (authoritative record)
+app.get('/ticket/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  db.get(`SELECT * FROM tickets WHERE id = ?`, [id], (err, row) => {
+    if (err) return res.status(500).json({ error: 'DB error' });
+    if (!row) return res.status(404).json({ error: 'not found' });
+
+    const services = parseServicesField(row);
+    const idx = Number(row.service_index || 0);
+    const current_service = (services && services[idx]) ? services[idx] : null;
+    const tokenNumeric = String(row.id).padStart(3, '0');
+    const prefix = SERVICE_PREFIX[current_service] || '';
+    const displayToken = prefix + tokenNumeric;
+
+    res.json({
+      ...row,
+      services,
+      current_service,
+      token: tokenNumeric,
+      displayToken,
+      cancel_requested: Boolean(Number(row.cancel_requested || 0)),
+      cancel_reason: row.cancel_reason || '',
+      cancel_requested_at: row.cancel_requested_at || ''
+    });
   });
 });
 
@@ -139,8 +187,7 @@ app.get('/stats', (req, res) => {
     `SELECT 
        SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END) AS waiting,
        SUM(CASE WHEN status='served' THEN 1 ELSE 0 END) AS served
-     FROM tickets`, [],
-    (err, row) => {
+     FROM tickets`, [], (err, row) => {
       if (err) return res.status(500).json({ error: 'DB error' });
       res.json({ waiting: row.waiting || 0, served: row.served || 0 });
     }
@@ -174,14 +221,12 @@ app.post('/next', requireStaff, (req, res) => {
   const { service } = req.body || {};
   if (!service) return res.status(400).json({ error: 'service required' });
 
-  // Select waiting tickets ordered by service_arrival (oldest first), then id
   db.all(`SELECT * FROM tickets WHERE status = 'waiting' ORDER BY COALESCE(service_arrival, created_at) ASC, id ASC`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: 'DB error', detail: err.message });
 
     let matched = null;
     for (const r of rows) {
-      let sv = [];
-      try { sv = Array.isArray(r.services) ? r.services : JSON.parse(r.services || '[]'); } catch(e) { sv = []; }
+      const sv = parseServicesField(r);
       const idx = Number(r.service_index || 0);
       if (Array.isArray(sv) && sv[idx] === service) { matched = r; break; }
     }
@@ -229,20 +274,16 @@ app.post('/serve/:id', requireStaff, (req, res) => {
     }
     if (!ticket) return res.status(404).json({ error: 'ticket not found' });
 
-    let services = [];
-    try { services = Array.isArray(ticket.services) ? ticket.services : JSON.parse(ticket.services || '[]'); } catch (e) { services = []; }
-
+    const services = parseServicesField(ticket);
     const idx = Number(ticket.service_index || 0);
     const currentService = (Array.isArray(services) && typeof services[idx] !== 'undefined') ? services[idx] : null;
 
     if (!currentService) return res.status(400).json({ error: 'Ticket has no current service to serve' });
 
-    // Caller must be the current service
     if (callerService !== currentService) {
       return res.status(400).json({ error: 'Ticket is not currently at this service', currentService });
     }
 
-    // Ensure the ticket was called (prevent serving without call)
     if (ticket.status !== 'called' || ticket.called_service !== currentService) {
       return res.status(400).json({ error: 'Ticket is not called for this service. Press Call Next first.' });
     }
@@ -251,7 +292,6 @@ app.post('/serve/:id', requireStaff, (req, res) => {
     const nextIndex = idx + 1;
 
     if (Array.isArray(services) && nextIndex < services.length) {
-      // advance to next: set service_index = nextIndex, status = waiting, clear called_service, set service_arrival = now
       db.run(
         `UPDATE tickets SET service_index = ?, status = 'waiting', called_service = '', service_arrival = ?, updated_at = ? WHERE id = ?`,
         [nextIndex, now, now, id],
@@ -267,7 +307,6 @@ app.post('/serve/:id', requireStaff, (req, res) => {
         }
       );
     } else {
-      // final service -> complete
       db.run(
         `UPDATE tickets SET status = 'served', served_at = ?, updated_at = ? WHERE id = ?`,
         [now, now, id],
@@ -295,8 +334,7 @@ app.post('/reassign/:id', requireStaff, (req, res) => {
     if (err) return res.status(500).json({ error: 'DB error' });
     if (!ticket) return res.status(404).json({ error: 'not found' });
 
-    let services = [];
-    try { services = Array.isArray(ticket.services) ? ticket.services : JSON.parse(ticket.services || '[]'); } catch(e) { services = []; }
+    const services = parseServicesField(ticket);
     const idx = services.indexOf(toService);
     if (idx === -1) return res.status(400).json({ error: 'Ticket does not include the target service' });
 
@@ -336,8 +374,7 @@ app.post('/recall/:id', requireStaff, (req, res) => {
     if (err) return res.status(500).json({ error: 'DB error', detail: err.message });
     if (!ticket) return res.status(404).json({ error: 'ticket not found' });
 
-    let services = [];
-    try { services = Array.isArray(ticket.services) ? ticket.services : JSON.parse(ticket.services || '[]'); } catch(e) { services = []; }
+    const services = parseServicesField(ticket);
     const idx = Number(ticket.service_index || 0);
     const currentService = services[idx];
     if (!currentService) return res.status(400).json({ error: 'Ticket has no current service' });
@@ -370,15 +407,55 @@ app.delete('/ticket/:id', requireStaff, (req, res) => {
   });
 });
 
+// Request cancel (public — kiosk will call this)
+app.post('/ticket/:id/request_cancel', (req, res) => {
+  const id = Number(req.params.id);
+  const reason = (req.body && req.body.reason) ? String(req.body.reason).trim() : '';
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  if (!reason) {
+    // allow empty reason but store note
+  }
+  const now = new Date().toISOString();
+  db.get(`SELECT * FROM tickets WHERE id = ?`, [id], (err, row) => {
+    if (err) return res.status(500).json({ error: 'DB error' });
+    if (!row) return res.status(404).json({ error: 'not found' });
+
+    db.run(`UPDATE tickets SET cancel_requested = 1, cancel_reason = ?, cancel_requested_at = ?, status = 'cancel_requested', updated_at = ? WHERE id = ?`,
+      [reason || '', now, now, id], function(uerr) {
+        if (uerr) return res.status(500).json({ error: 'DB update error', detail: uerr.message });
+        const payload = { id, cancel_reason: reason || '', cancel_requested_at: now };
+        emitEvent('cancel_requested', payload);
+        return res.json({ ok: true, ticket: payload });
+      });
+  });
+});
+
+// Staff clears a cancel request (staff decides not to delete)
+app.post('/ticket/:id/clear_cancel', requireStaff, (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  db.get(`SELECT * FROM tickets WHERE id = ?`, [id], (err, row) => {
+    if (err) return res.status(500).json({ error: 'DB error' });
+    if (!row) return res.status(404).json({ error: 'not found' });
+
+    const now = new Date().toISOString();
+    // clear cancel fields and set status back to waiting (or keep previous if you prefer)
+    db.run(`UPDATE tickets SET cancel_requested = 0, cancel_reason = '', cancel_requested_at = '', status = 'waiting', updated_at = ? WHERE id = ?`,
+      [now, id], function(uerr) {
+        if (uerr) return res.status(500).json({ error: 'DB update error', detail: uerr.message });
+        emitEvent('cancel_cleared', { id, at: now });
+        return res.json({ ok: true });
+      });
+  });
+});
+
 // Export CSV
 app.get('/export.csv', (req, res) => {
   db.all('SELECT * FROM tickets ORDER BY id', [], (err, rows) => {
     if (err) return res.status(500).send('Error');
-    // header must be a single JS string line (no literal newline)
-    const header = 'id,token,name,services,quer_type,called_service,status,created_at,updated_at,served_at\n';
+    const header = 'id,token,name,services,quer_type,called_service,status,cancel_requested,cancel_reason,created_at,updated_at,served_at\n';
     const body = rows.map(r => {
       const token = String(r.id).padStart(3, '0');
-      // quote values for CSV safety
       const q = v => `"${String(v || '').replace(/"/g, '""')}"`;
       return [
         r.id,
@@ -388,6 +465,8 @@ app.get('/export.csv', (req, res) => {
         q(r.quer_type),
         q(r.called_service),
         q(r.status),
+        Number(r.cancel_requested || 0),
+        q(r.cancel_reason),
         q(r.created_at),
         q(r.updated_at),
         q(r.served_at)
@@ -402,7 +481,7 @@ app.get('/export.csv', (req, res) => {
 // simple health endpoint
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// start listening on all interfaces so phones can reach it
+// start listening on all interfaces
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening at http://0.0.0.0:${PORT}`);
 });
