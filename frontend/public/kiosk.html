@@ -187,7 +187,7 @@ function bindUpDown(){
   list.querySelectorAll('.down').forEach(btn => btn.onclick = e => {
     const row = e.target.closest('.svc-row');
     const next = row.nextElementSibling;
-    if(next) row.parentNode.insertBefore(row, row.nextElementSibling.nextSibling ? row.nextElementSibling.nextSibling : next);
+    if(next) row.parentNode.insertBefore(row, next.nextSibling || next);
   });
 }
 bindUpDown();
@@ -317,11 +317,9 @@ function normalizeIndex(service_index, services) {
   if (typeof service_index === 'undefined' || service_index === null) return undefined;
   const n = Number(service_index);
   if (!Number.isFinite(n)) return undefined;
-  // If the server uses 1-based numbering (common), treat 1..N as 0..N-1
   if (Array.isArray(services) && n >= 1 && n <= services.length) {
     return Math.max(0, n - 1);
   }
-  // otherwise coerce to integer fallback
   return Math.max(0, Math.floor(n));
 }
 
@@ -339,9 +337,17 @@ function setUIForTicket(ticket) {
   resultBar.textContent = ticket.displayText || (`Your token: ${String(ticket.id).padStart(3,'0')}`);
   statusBox.style.display = 'block';
   const pos = (typeof ticket._position !== 'undefined') ? ` — position: ${ticket._position}` : '';
+  // include cancel request status/ reason if present
+  const cancelLine = ticket.cancel_reason ? `<div style="margin-top:6px;font-size:13px;color:#a00"><strong>Cancel request:</strong> ${escapeHtml(ticket.cancel_reason)}</div>` : '';
   statusBox.innerHTML = `<div style="font-weight:600">Your token: ${String(ticket.id).padStart(3,'0')} — waiting at <strong>${ticket.current_service||'...'}</strong>${pos}</div>
-    <div style="font-size:13px;margin-top:6px">Services: ${ticket.services ? ticket.services.join(' → ') : ''}</div>`;
-  cancelBtn.style.display = 'inline-block';
+    <div style="font-size:13px;margin-top:6px">Services: ${ticket.services ? ticket.services.join(' → ') : ''}</div>
+    ${cancelLine}`;
+  cancelBtn.style.display = ticket.cancel_requested ? 'inline-block' : 'inline-block';
+  // if request already sent, change label so user knows it's a request (can still allow sending again if desired)
+  cancelBtn.textContent = ticket.cancel_requested ? 'Request Cancel (sent)' : 'Cancel Ticket';
+  if(ticket.cancel_requested) cancelBtn.disabled = true;
+  else cancelBtn.disabled = false;
+
   btnGet.disabled = true;
   btnGet.classList.add('disabled');
 }
@@ -366,7 +372,10 @@ function beep(){
   }catch(e){}
 }
 
-/* -- small helper to build API URLs consistently (keeps previous behavior) -- */
+/* escape small HTML for inline insertion */
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* -- helper to compose API URLs -- */
 function apiUrl(path){
   if(!API) return path;
   const trimmed = String(API).trim();
@@ -398,12 +407,8 @@ btnGet.addEventListener('click', async function(){
     const d = await (resp.ok ? resp.json() : resp.json().catch(()=>({error:resp.statusText})));
     if (!resp.ok) { alert('Failed: ' + (d.error || d.detail || resp.statusText)); return; }
 
-    // prefer server-provided services if present; otherwise use chosen services
     const srvServices = Array.isArray(d.services) ? d.services : services;
-
-    // attempt to normalize service_index if server returned one
     const normalizedIndex = normalizeIndex(d.service_index, srvServices);
-
     const ticket = {
       id: d.id,
       services: srvServices,
@@ -411,7 +416,9 @@ btnGet.addEventListener('click', async function(){
       service_index: (typeof normalizedIndex !== 'undefined') ? normalizedIndex : 0,
       current_service: (Array.isArray(srvServices) && srvServices.length) ? ( (typeof normalizedIndex !== 'undefined') ? srvServices[normalizedIndex] : srvServices[0]) : (services[0] || null),
       status: d.status || 'waiting',
-      created_at: d.created_at || null
+      created_at: d.created_at || null,
+      cancel_requested: false,
+      cancel_reason: null
     };
     saveTicket(ticket);
     setUIForTicket(ticket);
@@ -425,43 +432,38 @@ btnGet.addEventListener('click', async function(){
   }
 });
 
-/* ------------------ cancel ticket flow ------------------ */
-async function cancelTicketFlow(id){
+/* ------------------ cancel request flow ------------------ */
+async function requestCancelOnServer(id, reason){
+  // Try flexible endpoints: server may implement a dedicated request_cancel route
   try {
-    let res = await fetch(apiUrl(`/ticket/${id}`), { method: 'DELETE' });
-    if(res.ok){
-      showToast('Ticket cancelled');
-      clearTicket(); setUIForTicket(null);
-      return true;
-    }
+    // preferred: POST /ticket/:id/request_cancel (server records request and not delete)
+    let res = await fetch(apiUrl(`/ticket/${id}/request_cancel`), {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ reason })
+    });
+    if(res.ok) return true;
 
-    res = await fetch(apiUrl(`/ticket/${id}/delete`), { method: 'POST' });
-    if(res.ok){
-      showToast('Ticket cancelled (fallback)');
-      clearTicket(); setUIForTicket(null);
-      return true;
-    }
+    // fallback: PATCH /ticket/:id with status + cancel_reason
+    res = await fetch(apiUrl(`/ticket/${id}`), {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ status: 'cancel_requested', cancel_reason: reason })
+    });
+    if(res.ok) return true;
 
-    res = await fetch(apiUrl(`/ticket/${id}/cancel`), { method: 'POST' });
-    if(res.ok){
-      showToast('Ticket cancelled (cancel endpoint)');
-      clearTicket(); setUIForTicket(null);
-      return true;
-    }
-
+    // if we get 401/403 let user know (staff-only)
     if(res.status === 401 || res.status === 403){
-      alert('Cancel failed: staff credentials required. Please ask staff at the counter to cancel your ticket.');
+      alert('Cancel request could not be sent (staff-only). Please ask staff to help.');
       return false;
     }
 
-    let text = await res.text().catch(()=> '');
-    try { const j = JSON.parse(text); if(j.error) text = j.error; } catch(e){}
-    alert('Cancel failed: ' + (text || res.statusText || res.status));
+    // otherwise read body for message
+    const text = await res.text().catch(()=> '');
+    console.warn('cancel request non-ok', res.status, text);
     return false;
-
   } catch(err){
-    console.error('cancel error', err);
-    alert('Network error while cancelling ticket');
+    console.warn('requestCancelOnServer error', err);
     return false;
   }
 }
@@ -469,8 +471,39 @@ async function cancelTicketFlow(id){
 cancelBtn.addEventListener('click', async () => {
   const t = loadTicket();
   if(!t) { alert('No ticket to cancel'); return; }
-  if(!confirm('Cancel your ticket?')) return;
-  await cancelTicketFlow(t.id);
+
+  // prompt for reason — require a non-empty reason
+  let reason = prompt('Please enter reason for cancellation (this will be sent to staff):');
+  if(reason === null) return; // user cancelled prompt
+  reason = String(reason).trim();
+  if(!reason){
+    if(!confirm('Send cancel request without a reason? Press OK to send without reason, Cancel to edit.')) return;
+  }
+
+  // optimistic local update so user sees request sent quickly
+  t.cancel_requested = true;
+  t.cancel_reason = reason || '(no reason provided)';
+  t.status = 'cancel_requested';
+  saveTicket(t);
+  setUIForTicket(t);
+  showToast('Sending cancel request to staff...');
+
+  // try to notify server
+  const ok = await requestCancelOnServer(t.id, t.cancel_reason);
+  if(ok){
+    showToast('Cancel request sent — staff will review it.');
+    // disable button to avoid multiple requests
+    t.cancel_requested = true;
+    saveTicket(t);
+    setUIForTicket(t);
+  } else {
+    showToast('Failed to send cancel request. Please ask staff directly.');
+    // allow retry
+    t.cancel_requested = false;
+    t.cancel_reason = null;
+    saveTicket(t);
+    setUIForTicket(t);
+  }
 });
 
 /* ------------------ SSE listening ------------------ */
@@ -492,9 +525,23 @@ function startSSEForKiosk(){
     es.addEventListener('reassigned', e => handleRaw(e,'reassigned'));
     es.addEventListener('served', e => handleRaw(e,'served'));
     es.addEventListener('deleted', e => handleRaw(e,'deleted'));
+    es.addEventListener('updated', e => handleRaw(e,'updated')); // optional extra event
     es.addEventListener('created', e => {}); // noop
   } catch(err){
     console.warn('SSE not available', err);
+  }
+}
+
+/* ------------------ helper: fetch authoritative ticket record (kept but not required) ------------------ */
+async function fetchTicketFromServer(id){
+  try {
+    const r = await fetch(apiUrl(`/ticket/${id}`));
+    if(!r.ok) return null;
+    const data = await r.json();
+    return data;
+  } catch(e){
+    console.warn('ticket fetch failed', e);
+    return null;
   }
 }
 
@@ -507,25 +554,19 @@ async function handleEventPayload(payload, type){
 
   console.log('Handling SSE for our ticket:', type, payload);
 
-  // Prefer explicit service names from the payload:
-  // - payload.to (server indicates next service after move/served)
-  // - payload.service or payload.called_service (called notification)
-  // - payload.services (authoritative list)
-  // - payload.service_index (as fallback)
-  if(Array.isArray(payload.services)) {
-    t.services = payload.services;
-  }
+  // Pull server-provided fields if any
+  if(Array.isArray(payload.services)) t.services = payload.services;
+  if(typeof payload.cancel_reason !== 'undefined') t.cancel_reason = payload.cancel_reason;
+  if(typeof payload.cancel_requested !== 'undefined') t.cancel_requested = !!payload.cancel_requested;
 
-  // If server gave a 'to' field, that is the next/current waiting service
+  // Payload-first service resolution:
   if(payload.to) {
     t.current_service = String(payload.to);
-    // If we have services array, update index to match the 'to' service if possible
     if(Array.isArray(t.services)) {
       const idx = t.services.indexOf(t.current_service);
       if(idx !== -1) t.service_index = idx;
     }
   } else if(payload.service || payload.called_service) {
-    // many events use 'service' or 'called_service' to indicate where the ticket is called
     const svcName = payload.service || payload.called_service;
     t.current_service = String(svcName);
     if(Array.isArray(t.services)){
@@ -533,7 +574,6 @@ async function handleEventPayload(payload, type){
       if(idx !== -1) t.service_index = idx;
     }
   } else if(typeof payload.service_index !== 'undefined') {
-    // fallback: normalize index
     const normalized = normalizeIndex(payload.service_index, payload.services || t.services || []);
     if(typeof normalized !== 'undefined') {
       t.service_index = normalized;
@@ -541,18 +581,16 @@ async function handleEventPayload(payload, type){
     }
   }
 
-  // update status/called_service if provided
   if(payload.status) t.status = payload.status;
-  if(payload.called_service) t.called_service = payload.called_service;
 
-  // ensure sensible defaults
+  // Ensure defaults
   if(typeof t.service_index === 'undefined') t.service_index = 0;
   if(!t.current_service && Array.isArray(t.services) && t.services.length) t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)];
 
   saveTicket(t);
   setUIForTicket(t);
 
-  // Now behavior per event type:
+  // event-specific UI / notifications
   if(type === 'called'){
     const svc = payload.called_service || payload.service || t.current_service || 'service';
     showToast(`Your token ${String(t.id).padStart(3,'0')} is called at ${svc}`);
@@ -562,7 +600,6 @@ async function handleEventPayload(payload, type){
   }
 
   if(type === 'moved' || type === 'reassigned'){
-    // server told us the ticket moved; if payload.to exists we already set it above
     showToast(`Your ticket moved to ${t.current_service || 'next service'}`);
     beep(); try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
     await updatePositionForTicket();
@@ -570,7 +607,7 @@ async function handleEventPayload(payload, type){
   }
 
   if(type === 'served'){
-    // If server indicated 'to' (next service) then the ticket is not final: set current to that 'to'
+    // If server told us the next service via payload.to, treat as moved
     if(payload.to){
       t.current_service = payload.to;
       if(Array.isArray(t.services)){
@@ -586,7 +623,7 @@ async function handleEventPayload(payload, type){
       return;
     }
 
-    // If no 'to' and server status says final -> clear
+    // If server indicates final/completed, clear
     if(payload.status === 'served' || payload.status === 'completed' || payload.status === 'done' || payload.final === true){
       showToast('Your ticket has been served. Thank you!');
       beep(); try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
@@ -595,7 +632,7 @@ async function handleEventPayload(payload, type){
       return;
     }
 
-    // Fallback: if services array exists and our service_index is last -> final
+    // Defensive fallback: if our index is last then final; else move forward
     if(Array.isArray(t.services)){
       if(typeof t.service_index === 'undefined' || t.service_index >= (t.services.length - 1)){
         showToast('Your ticket has been served. Thank you!');
@@ -604,7 +641,6 @@ async function handleEventPayload(payload, type){
         setTimeout(()=> setUIForTicket(null), 400);
         return;
       } else {
-        // Otherwise move to the next index (defensive)
         t.service_index = Math.min(t.service_index + 1, t.services.length - 1);
         t.current_service = t.services[t.service_index];
         t.status = 'waiting';
@@ -617,7 +653,6 @@ async function handleEventPayload(payload, type){
       }
     }
 
-    // Last fallback: keep the ticket and wait for next event
     showToast('Service recorded. Waiting for next update...');
     return;
   }
@@ -673,7 +708,6 @@ async function updatePositionForTicket(){
 (function init(){
   const t = loadTicket();
   if(t) {
-    // normalize stored index
     t.service_index = normalizeIndex(t.service_index, t.services || []);
     if(!t.current_service && Array.isArray(t.services) && t.services.length) t.current_service = t.services[Math.min(t.service_index||0, (t.services.length-1))];
     saveTicket(t);
