@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import './display.css';
 
 const API = import.meta.env.VITE_API_URL || 'http://192.168.18.34:4000';
-const STAFF_KEY = import.meta.env.VITE_STAFF_KEY || 'STI-QUEUE-KEY'; // server key for validation
+const STAFF_KEY = import.meta.env.VITE_STAFF_KEY || 'STI-QUEUE-KEY';
 
 async function safeJson(res) {
   try { return await res.json(); }
@@ -18,7 +18,6 @@ const AVAILABLE_SERVICES = [
 
 const QUER_TYPES = ['Student','Faculty/Staff','Visitor','Other'];
 
-/* ---------- small helpers ---------- */
 function arrayMove(arr, fromIndex, toIndex) {
   const copy = arr.slice();
   const [el] = copy.splice(fromIndex, 1);
@@ -26,7 +25,6 @@ function arrayMove(arr, fromIndex, toIndex) {
   return copy;
 }
 
-/* ---------------- DraggableServiceList (same as earlier) ---------------- */
 function DraggableServiceList({ services, selected = [], onChange }) {
   const [order, setOrder] = useState(services.map(s => s.key));
   const [draggingKey, setDraggingKey] = useState(null);
@@ -62,9 +60,6 @@ function DraggableServiceList({ services, selected = [], onChange }) {
     if (next.join(',') !== order.join(',')) updateOrder(next);
   }
 
-  function onDrop() { setDraggingKey(null); }
-
-  // touch fallback
   let touchState = useRef({ key: null, started: false }).current;
 
   function onTouchStart(e, key) {
@@ -112,7 +107,7 @@ function DraggableServiceList({ services, selected = [], onChange }) {
               draggable
               onDragStart={(e) => onDragStart(e, key)}
               onDragOver={(e) => onDragOver(e, key)}
-              onDrop={onDrop}
+              onDrop={() => setDraggingKey(null)}
               onTouchStart={(e) => onTouchStart(e, key)}
               onTouchMove={onTouchMove}
               onTouchEnd={onTouchEnd}
@@ -157,8 +152,7 @@ function DraggableServiceList({ services, selected = [], onChange }) {
   );
 }
 
-/* ---------- ServiceTable component ---------- */
-function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, onCallNext }) {
+function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, onCallNext, onClearCancel }) {
   const prepared = tickets.map(t => {
     let services = [];
     try { services = Array.isArray(t.services) ? t.services : JSON.parse(t.services || '[]'); } catch(e) { services = []; }
@@ -166,7 +160,9 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
       ...t,
       current_service: (services && services.length > (t.service_index || 0)) ? services[t.service_index || 0] : null,
       displayToken: (service[0] || '').toUpperCase() + String(t.id).padStart(3,'0'),
-      services
+      services,
+      cancel_requested: Boolean(Number(t.cancel_requested || 0)),
+      cancel_reason: t.cancel_reason || ''
     };
   });
   const visible = prepared.filter(t => t.current_service === service);
@@ -185,14 +181,29 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
         <div style={{
           background:'#111', padding:16, marginBottom:12, borderRadius:6, display:'flex', alignItems:'center', gap:12
         }}>
-          <div style={{fontSize:56, fontWeight:700, lineHeight:1}}>{called.displayToken}</div>
-          <div>
+          <div style={{fontSize:56, fontWeight:700, lineHeight:1, cursor: called.cancel_requested ? 'pointer' : 'default'}}
+               onClick={() => {
+                 if (called.cancel_requested) alert('Cancel request reason:\n\n' + (called.cancel_reason || '(no reason provided)'));
+               }}>
+            {called.displayToken}
+          </div>
+          <div style={{flex:1}}>
             <div style={{fontSize:18, fontWeight:600}}>{called.name || 'No name'}</div>
             <div style={{fontSize:12, color:'#ddd'}}>{called.quer_type || ''}</div>
+
+            {called.cancel_requested ? (
+              <div style={{marginTop:8, color:'#ffb3b3', fontWeight:700}}>
+                Cancel requested — reason: {called.cancel_reason || '(no reason)'}
+              </div>
+            ) : null}
+
             <div style={{marginTop:8}}>
               <button onClick={() => onServe(called.id, service)} style={{marginRight:6}}>Serve</button>
               <button onClick={() => onHold(called.id)} style={{marginRight:6}}>Hold</button>
-              <button onClick={() => onDelete(called.id)} className="delete">Delete</button>
+              <button onClick={() => onDelete(called.id)} className="delete" style={{marginRight:6}}>Delete</button>
+              {called.cancel_requested ? (
+                <button onClick={() => onClearCancel(called.id)}>Clear Cancel Request</button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -212,13 +223,16 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
           {visible.map(q => {
             if (called && called.id === q.id) return null;
             return (
-              <tr key={q.id}>
-                <td style={{padding:6}}>{q.displayToken || String(q.id).padStart(3,'0')}</td>
+              <tr key={q.id} style={q.cancel_requested ? { background: 'rgba(255, 100, 100, 0.04)' } : {}}>
+                <td style={{padding:6, cursor: q.cancel_requested ? 'pointer' : 'default'}} onClick={() => {
+                  if(q.cancel_requested) alert('Cancel request reason:\n\n' + (q.cancel_reason || '(no reason provided)'));
+                }}>{q.displayToken || String(q.id).padStart(3,'0')}</td>
                 <td style={{padding:6}}>{q.name || '—'}</td>
                 <td style={{padding:6}}>{q.quer_type || '—'}</td>
                 <td style={{padding:6}}>
                   {q.status === 'called' ? `Called (${q.called_service})` : q.status}
                   <div style={{fontSize:11, color:'#cfe6ff'}}>Progress: {Number(q.service_index || 0) + 1}/{(q.services || []).length} — {(q.services || []).join(' → ')}</div>
+                  {q.cancel_requested ? <div style={{color:'#ffb3b3', fontSize:12, marginTop:6}}>Cancel requested</div> : null}
                 </td>
                 <td style={{padding:6}}>
                   <div className="actions">
@@ -232,6 +246,7 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
                     <button onClick={() => onHold(q.id)}>Hold</button>
                     {q.status === 'hold' ? <button onClick={() => onRecall(q.id)}>Recall</button> : null}
                     <button className="delete" onClick={() => onDelete(q.id)}>Delete</button>
+                    {q.cancel_requested ? <button onClick={() => onClearCancel(q.id)}>Clear Cancel</button> : null}
                   </div>
                 </td>
               </tr>
@@ -243,17 +258,14 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
   );
 }
 
-/* -------------------- LoginOverlay component -------------------- */
 function LoginOverlay({ onLogin }) {
   const [key, setKey] = useState(localStorage.getItem('staff_key') || '');
-  // Use server's STAFF_KEY for validation (change if you prefer another constant)
   const DEFAULT_STAFF_KEY = STAFF_KEY;
 
   return (
     <div style={{
       position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
       background:'rgba(0,0,0,0.35)', zIndex:9999,
-      // blur the background behind the modal
       backdropFilter: 'blur(50px)',
       WebkitBackdropFilter: 'blur(4px)'
     }}>
@@ -265,7 +277,6 @@ function LoginOverlay({ onLogin }) {
         <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
           <button onClick={() => {
             if (!key) return alert('Enter key');
-            // validate against environment SERVER key
             if (key !== DEFAULT_STAFF_KEY) return alert('Wrong staff key');
             localStorage.setItem('staff_key', key);
             onLogin(key);
@@ -276,21 +287,18 @@ function LoginOverlay({ onLogin }) {
   );
 }
 
-/* --------------------------- Main App component --------------------------- */
 export default function App(){
   const [queue, setQueue] = useState([]);
   const [name, setName] = useState('');
   const [selectedServices, setSelectedServices] = useState(['registrar']);
   const [querType, setQuerType] = useState(QUER_TYPES[0]);
   const [stats, setStats] = useState({waiting:0, served:0});
-
-  // authentication state (staff key in storage)
   const [staffKey, setStaffKey] = useState(localStorage.getItem('staff_key') || '');
 
   useEffect(() => {
     fetchQueue(); fetchStats();
     const es = new EventSource(`${API}/events`);
-    ['created','called','served','moved','reassigned','hold','recalled','deleted'].forEach(evt =>
+    ['created','called','served','moved','reassigned','hold','recalled','deleted','cancel_requested','cancel_cleared'].forEach(evt =>
       es.addEventListener(evt, () => { fetchQueue(); fetchStats(); })
     );
     es.onerror = (e) => console.warn('SSE error', e);
@@ -306,7 +314,6 @@ export default function App(){
     setStaffKey('');
   }
 
-  // when DraggableServiceList changes selection/order
   function onServicesChange(orderedSelected) {
     setSelectedServices(orderedSelected);
   }
@@ -332,7 +339,6 @@ export default function App(){
     }
   }
 
-  /* -------- kiosk: create ticket -------- */
   async function takeTicket(){
     if (!Array.isArray(selectedServices) || selectedServices.length === 0) {
       return alert('Select at least one service.');
@@ -353,7 +359,6 @@ export default function App(){
     } catch (e) { console.error(e); alert('Network error'); }
   }
 
-  /* -------- staff actions: use dynamic staff key (from login) -------- */
   function staffHeaders() {
     const keyToUse = staffKey || STAFF_KEY;
     return { 'Content-Type': 'application/json', 'x-staff-key': keyToUse };
@@ -430,6 +435,20 @@ export default function App(){
     }
   }
 
+  // Clear cancel request (staff action)
+  async function clearCancel(id) {
+    if (!confirm('Clear cancel request (staff action)?')) return;
+    try {
+      const res = await fetch(`${API}/ticket/${id}/clear_cancel`, {
+        method: 'POST',
+        headers: { 'x-staff-key': staffKey || STAFF_KEY }
+      });
+      const data = await safeJson(res);
+      if (!res.ok) { alert('Clear cancel request failed: ' + (data.error || data.text || res.statusText)); return; }
+      fetchQueue(); fetchStats();
+    } catch (err) { console.error('clearCancel error', err); alert('Network error'); }
+  }
+
   return (
     <div style={{fontFamily:'sans-serif', padding:20}}>
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
@@ -442,12 +461,10 @@ export default function App(){
       </div>
 
       <div style={{display:'flex', gap:20, alignItems:'flex-start'}}>
-        {/* Ticket box */}
         <div style={{ width:320, padding:12, border:'1px solid #ddd', borderRadius:8, background:'#fff' }}>
           <h2>Take a Ticket</h2>
           <input placeholder="Your name (optional)" value={name} onChange={e=>setName(e.target.value)} style={{width:'100%', marginBottom:8}}/>
 
-          {/* Draggable list */}
           <DraggableServiceList
             services={AVAILABLE_SERVICES}
             selected={selectedServices}
@@ -467,7 +484,6 @@ export default function App(){
           <div>Served: {stats.served}</div>
         </div>
 
-        {/* Service cards */}
         <div style={{flex:1, display:'flex', gap:12, overflowX:'auto'}}>
           {AVAILABLE_SERVICES.map(svc => (
             <ServiceTable
@@ -479,12 +495,12 @@ export default function App(){
               onRecall={recall}
               onDelete={deleteTicket}
               onCallNext={callNext}
+              onClearCancel={clearCancel}
             />
           ))}
         </div>
       </div>
 
-      {/* show overlay if not logged-in (force login) */}
       {!staffKey && <LoginOverlay onLogin={onLogin} />}
     </div>
   );
