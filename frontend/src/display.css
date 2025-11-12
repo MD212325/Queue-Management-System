@@ -1,245 +1,230 @@
 :root{
-  blue: #0b4ea2;    /* primary blue */
-  dark: #08294d;    /* dark navy for cards */
-  yellow: #ffd100;  /* bright yellow accent */
-  --muted: #f2f4f7;       /* page background / light */
-  --card-bg: #0f2440;     /* inner card background */
-  --text-light: #ffffff;
-  --text-dark: #1b1b1b;
-  --btn-height: 36px;
-  --btn-radius: 8px;
-  --action-width: 96px;   /* width for vertical action buttons */
+  --bg: #f3f5f7;
+  --card-bg: #0f2940;       /* deep navy */
+  --card-inner: #0b2132;    /* slightly darker */
+  --accent: #f2c230;        /* yellow accent if needed */
+  --muted: #9fb0c2;
+  --white: #ffffff;
+  --danger: #c0392b;
+  --shadow: 0 8px 22px rgba(2,8,12,0.18);
+  --ui-radius: 6px;
+  --btn-height: 32px;
+  --btn-radius: 6px;
 }
 
-/* Page */
+/* overall layout */
 body {
-  margin: 18px 24px;
-  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background: var(--muted);
-  color: #111;
+  margin: 0;
+  background: var(--bg);
+  font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+  color: #222;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
 }
+h1 { margin:0 0 18px 0; font-size:34px; }
+h2 { margin:0 0 10px 0; font-size:18px; }
 
-/* Big heading */
-h1 {
-  color: var(dark);
-  font-size: 36px;
-  margin: 6px 0 18px 0;
-  font-weight: 700;
+/* top wrapper used inline in component */
+div[style*="padding:20px"] { padding-bottom:36px; }
+
+/* "Take a Ticket" panel */
+div[style*="width:320"]{
+  background:#fff;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+  border-radius:10px;
+  padding:18px;
+  box-sizing:border-box;
 }
-
-/* Main layout: left ticket panel + service cards row */
-.app-wrap {
-  display: flex;
-  gap: 28px;
-  align-items: flex-start;
+div[style*="width:320"] h2 { font-size:20px; margin-bottom:8px; }
+div[style*="width:320"] input[type="text"], div[style*="width:320"] select {
+  width:100%;
+  padding:6px 8px;
+  border:1px solid #d0d6da;
+  border-radius:4px;
+  box-sizing:border-box;
 }
+div[style*="width:320"] label { font-size:14px; color:#333; }
+div[style*="width:320"] button { cursor:pointer; }
 
-/* Left ticket box */
-.ticket-panel {
-  width: 300px;
-  background: #fff;
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: 0 6px 18px rgba(5,9,20,0.06);
-  border: 1px solid rgba(6,10,20,0.06);
-}
+/* container for service cards row */
+.service-card, .service-card * { box-sizing: border-box; }
 
-.ticket-panel h2 {
-  margin: 0 0 10px 0;
-  color: var(dark);
-}
-
-.ticket-panel input[type="text"], 
-.ticket-panel select {
-  width: 100%;
-  padding: 8px 10px;
-  margin-bottom: 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(10,10,10,0.08);
-  box-sizing: border-box;
-  font-size: 14px;
-}
-
-/* Primary full-width button (Get Token, Call Next on top of card) */
-.btn {
-  display: inline-block;
-  height: var(--btn-height);
-  min-height: var(--btn-height);
-  padding: 0 12px;
-  border-radius: var(--btn-radius);
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  text-align: center;
-  border: none;
-  line-height: var(--btn-height);
-}
-
-/* Primary accent: yellow call buttons */
-.btn-primary {
-  background: linear-gradient(180deg,var(yellow), #f6c400);
-  color: var(dark);
-  box-shadow: 0 4px 8px rgba(11,78,162,0.06);
-}
-
-/* Secondary: blue action buttons */
-.btn-blue {
-  background: linear-gradient(180deg,var(blue), var(dark));
-  color: var(--text-light);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.16);
-}
-
-/* Danger */
-.btn-danger {
-  background: #c62b2b;
-  color: #fff;
-}
-
-/* Make the primary "Call Next" and "Get Token" buttons full width in their containers */
-.ticket-panel .btn,
-.service-card > .btn {
-  width: 100%;
-}
-
-/* Service cards grid */
-.service-grid {
+/* service card */
+.service-card{
+  min-width: 260px;
+  max-width: 360px;
+  flex: 1 0 280px;
+  background: linear-gradient(180deg,var(--card-bg),var(--card-inner));
+  color:var(--white);
+  border-radius:10px;
+  padding:14px;
+  box-shadow: var(--shadow);
   display:flex;
-  gap: 20px;
-  align-items: flex-start;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  padding-bottom: 6px;
+  flex-direction:column;
+  gap:10px;
 }
 
-/* Card base */
-.service-card {
-  flex: 0 0 360px;       /* fixed card width */
-  min-width: 320px;
-  background: var(--card-bg);
-  color: var(--text-light);
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 8px 20px rgba(3,8,20,0.12);
-  border: 1px solid rgba(255,255,255,0.03);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* Card header with thin yellow stripe */
-.service-card .card-head {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background: linear-gradient(90deg, rgba(0,0,0,0.18), rgba(0,0,0,0.12));
-  padding: 8px;
-  border-radius: 6px;
-  position: relative;
+/* header */
+.service-card h3{
+  text-align:center;
+  margin:0;
+  padding:8px 0;
+  font-size:14px;
+  letter-spacing:1px;
   font-weight:700;
-  letter-spacing:0.06em;
-  text-transform:uppercase;
+  background: rgba(0,0,0,0.12);
+  border-radius:6px;
+}
+
+/* call button on top */
+.call-btn{
+  display:block;
+  width:100%;
+  height:var(--btn-height);
+  border-radius:var(--btn-radius);
+  border:none;
+  background: rgba(0,0,0,0.42);
+  color:#fff;
+  font-weight:600;
+  cursor:pointer;
+  box-shadow: inset 0 -3px 0 rgba(0,0,0,0.25);
+}
+
+/* called card: prominent token display */
+.called-card{
+  display:flex;
+  gap:12px;
+  align-items:center;
+  background: rgba(0,0,0,0.45);
+  border-radius:8px;
+  padding:12px;
+}
+
+/* token big number */
+.called-card .token{
+  font-weight:800;
+  font-size:64px;
+  line-height:1;
+  color:var(--white);
+  min-width:110px;
+  text-align:center;
+  letter-spacing:2px;
+}
+
+/* details next to token */
+.called-card .details {
+  flex:1;
+  color:var(--muted);
+}
+.called-card .name {
+  font-size:18px;
+  font-weight:700;
+  color:#fff;
+}
+.called-card .type {
   font-size:13px;
+  color:#c9dbe8;
+  margin-top:4px;
 }
 
-/* yellow bar under header */
-.service-card .card-head::after {
-  content: "";
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: -8px;
-  height: 6px;
-  background: var(yellow);
-  border-radius: 4px;
-  opacity: 0.98;
-  transform: translateY(6px);
+/* mini actions under called token */
+.called-card .mini-actions {
+  margin-top:10px;
+}
+.called-card .mini-actions button{
+  height:28px;
+  margin-right:8px;
+  border-radius:6px;
+  border:none;
+  padding:0 10px;
+  cursor:pointer;
+  background: rgba(255,255,255,0.08);
+  color:#fff;
+  font-weight:600;
 }
 
-/* table styling inside card */
-.service-card table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  color: #eee;
-  margin-top: 6px;
+/* standard table area (waiting list) */
+.service-table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:4px;
+  background: transparent;
+}
+.service-table thead tr {
+  background: rgba(0,0,0,0.35);
+}
+.service-table th, .service-table td {
+  padding:8px 10px;
+  font-size:13px;
+  color: #f5f8fa;
+  border-bottom: 1px solid rgba(255,255,255,0.02);
+  text-align:left;
 }
 
-.service-card thead th {
-  font-size: 12px;
-  text-align: left;
-  padding: 8px 6px;
-  color: #fff;
-  font-weight: 700;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+/* progress line under status */
+.progress {
+  font-size:11px;
+  color: #bcd6ea;
+  margin-top:4px;
 }
 
-.service-card tbody td {
-  padding: 8px 6px;
-  font-size: 13px;
-  vertical-align: middle;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Column widths */
-.service-card td:nth-child(1) { width: 64px; }  /* token */
-.service-card td:nth-child(2) { width: 120px; } /* name */
-.service-card td:nth-child(3) { width: 86px; }  /* type */
-.service-card td:nth-child(4) { width: 86px; }  /* status */
-.service-card td:nth-child(5) { width: 100px; } /* actions */
-
-/* Actions column: vertical stacked buttons with uniform size */
+/* actions column styles - make buttons uniform */
 .actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-end;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  align-items:flex-end;
+}
+.actions button, .mini-actions button {
+  min-width:64px;
+  padding:6px 10px;
+  height:32px;
+  border-radius:6px;
+  border:none;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  cursor:pointer;
+  font-size:13px;
+  box-shadow: none;
+}
+.actions button[disabled] {
+  opacity:0.36;
+  cursor:not-allowed;
 }
 
-/* Action buttons uniform width */
-.actions button,
-.service-card .small-btn {
-  width: var(--action-width);
-  height: var(--btn-height);
-  padding: 0 8px;
-  border-radius: 6px;
-  font-size: 13px;
+/* delete button style */
+.actions button.delete, .mini-actions button.delete {
+  background: var(--danger);
+  color:#fff;
 }
 
-/* small blue action */
-.actions button {
-  background: linear-gradient(180deg,var(blue), var(dark));
-  color: white;
-  border: none;
+/* small hold button variant */
+.actions button:nth-child(2) {
+  background: rgba(0,0,0,0.6);
 }
 
-/* delete button override */
-.actions button.delete {
-  background: #c62b2b;
+/* make table rows wrap content more nicely */
+.service-table tbody tr td {
+  max-width: 160px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 
-/* Ensure primary call area button stands out */
-.service-card > .btn {
-  margin-top: 6px;
-  background: var(yellow);
-  color: var(dark);
-  font-weight: 700;
-}
-
-/* Make forms and checkboxes neat in ticket panel */
-.ticket-panel label { display:block; margin-bottom:6px; font-size:14px; color:#222; }
-.ticket-panel .stats { margin-top:14px; color:#222; font-weight:600; }
-
-/* Footer / small text */
-.small {
-  font-size: 12px;
-  color: rgba(0,0,0,0.6);
-}
-
-/* responsive tweak */
+/* small screens: allow horizontal scroll for cards */
 @media (max-width: 980px) {
-  .app-wrap { flex-direction: column; }
-  .ticket-panel { width: 100%; }
-  .service-card { flex: 1 1 auto; min-width: 280px; }
+  .service-card { min-width: 320px; }
 }
+
+/* TV / large monitors: scale bigger tokens */
+@media (min-width: 2560px) {
+  .called-card .token { font-size:120px; }
+  .called-card .details .name { font-size:28px; }
+}
+
+/* left "take a ticket" tweaks for form elements */
+div[style*="width:320"] h3 { margin-top: 16px; }
+div[style*="width:320"] .stats { font-size:14px; }
+
+/* tiny niceties */
+button:focus { outline: 2px solid rgba(255,195,48,0.16); outline-offset:2px; }

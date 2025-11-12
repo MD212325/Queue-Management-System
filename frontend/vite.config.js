@@ -5,14 +5,22 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+
+    https: {
+        key: './certs/sti-queue-system-privateKey.key',
+        cert: './certs/sti-queue-system.crt'
+    },
+
     proxy: {
-      '/queue': { target: 'http://localhost:4000', changeOrigin: true },
-      '/events': { target: 'http://localhost:4000', changeOrigin: true },
-      '/ticket': { target: 'http://localhost:4000', changeOrigin: true },
-      '/next': { target: 'http://localhost:4000', changeOrigin: true },
-      '/serve': { target: 'http://localhost:4000', changeOrigin: true },
-      '/hold': { target: 'http://localhost:4000', changeOrigin: true },
-      '/recall': { target: 'http://localhost:4000', changeOrigin: true }
+      '/queue': { target: 'https://localhost:4000', changeOrigin: true },
+      '/events': { target: 'https://localhost:4000', changeOrigin: true },
+      '/ticket': { target: 'https://localhost:4000', changeOrigin: true },
+      '/next': { target: 'https://localhost:4000', changeOrigin: true },
+      '/serve': { target: 'https://localhost:4000', changeOrigin: true },
+      '/hold': { target: 'https://localhost:4000', changeOrigin: true },
+      '/recall': { target: 'https://localhost:4000', changeOrigin: true }
+    }
+
     }
   }
-})
+)

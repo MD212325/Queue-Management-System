@@ -1,5 +1,3 @@
-// migrate.js
-// Run: node migrate.js
 const sqlite3 = require('sqlite3').verbose();
 const path = './queue.db';
 const db = new sqlite3.Database(path);

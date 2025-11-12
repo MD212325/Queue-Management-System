@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Admin Login — Queue</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;background:#f4f6f8;padding:40px}
+    .box{max-width:420px;margin:40px auto;padding:20px;border-radius:8px;background:#fff;box-shadow:0 6px 20px rgba(0,0,0,.08)}
+    label{display:block;margin-bottom:6px;font-weight:600}
+    input{width:100%;padding:10px;border-radius:6px;border:1px solid #ddd;margin-bottom:12px}
+    button{display:inline-block;padding:10px 14px;border-radius:6px;border:0;background:#0b6adf;color:#fff;font-weight:700}
+    .hint{font-size:13px;color:#666;margin-top:6px}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Admin Login</h2>
+    <p>Enter the staff key provided to staff. This will be stored in your browser session only.</p>
+    <label for="key">Staff Key</label>
+    <input id="key" placeholder="Enter staff key" />
+    <button id="submit">Login</button>
+    <div class="hint"></div>
+  </div>
+
+  <script>
+    const submit = document.getElementById('submit');
+    submit.addEventListener('click', () => {
+      const v = (document.getElementById('key').value || '').trim();
+      if (!v) return alert('Please enter the staff key');
+      sessionStorage.setItem('staff_key', v);
+      // redirect to admin panel (adjust path if your admin is at another URL)
+      const redirect = document.querySelector('meta[name="redirect"]')?.content || 'index.html';
+      window.location = redirect;
+    });
+
+    // also allow enter key
+    document.getElementById('key').addEventListener('keydown', e => {
+      if (e.key === 'Enter') submit.click();
+    });
+  </script>
+</body>
+</html>
