@@ -1,6 +1,6 @@
 # Queue Display System
 
-A simple queuing system with a **ticket generator** and a **queue display**.  
+A simple queuing system with a **ticket generator**, a **queue display**, and a **kiosk for quers**.  
 Built with **Vite + React** (frontend) and a lightweight backend (HTML/JS/CSS).  
 
 ---
@@ -57,6 +57,7 @@ The production files will be in the `dist/` folder.
 queue-display-system/
 ├── display.html       # Main display screen
 ├── display.css        # Styling for display
+├── kiosk.html         # Main kiosk screen for quers
 ├── src/               # React source files
 ├── public/            # Static assets
 ├── package.json       # Dependencies & scripts

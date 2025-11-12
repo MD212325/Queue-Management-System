@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 :root{
     --bg:#0b0b0b; --card:#111; --muted:#9aa; --accent:#ffd100; --blue:#0b4ea2;
 }
@@ -47,3 +48,54 @@ h1 { font-size:36px; margin:0 0 14px 0; color:#fff; }
 @media (max-width:900px){
     .grid { flex-direction:column; }
     .token-big { font-size:40px; }
+=======
+:root{
+    --bg:#0b0b0b; --card:#111; --muted:#9aa; --accent:#ffd100; --blue:#0b4ea2;
+}
+body { background:var(--bg); color:#fff; font-family: Inter, Arial, Helvetica, sans-serif; margin:18px; }
+h1 { font-size:36px; margin:0 0 14px 0; color:#fff; }
+.grid { display:flex; gap:18px; align-items:flex-start; }
+.col { flex:1; min-width:260px; background:var(--card); padding:14px; border-radius:10px; box-shadow:0 8px 20px rgba(0,0,0,0.6); }
+.col h2 { margin:0 0 6px 0; font-size:15px; text-align:center; letter-spacing:0.06em; }
+.meta { font-size:13px; color:var(--muted); text-align:center; margin-bottom:10px; }
+.called {
+  background: linear-gradient(135deg, var(--blue), var(--accent));
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 25px rgba(255, 209, 0, 0.4);
+}
+
+.token-big {
+  font-size: 96px;      /* bigger number */
+  font-weight: 900;
+  min-width: 180px;
+  text-align: center;
+  color: #fff;
+}
+
+.info .name {
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.info .type {
+  font-size: 16px;
+  color: #fff;
+  opacity: 0.8;
+}
+.info { flex:1; }
+.waiting-list { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+.wait-item { background:#0f0f0f; padding:8px 10px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; }
+.wait-left { display:flex; gap:12px; align-items:center; }
+.wait-id { font-weight:800; font-size:18px; width:64px; text-align:center; }
+.wait-name { color:#ddd; }
+.wait-type { color:var(--muted); font-size:12px; }
+#debug { margin-top:14px; color:#ddd; font-size:12px; background: rgba(255,255,255,0.02); padding:8px; border-radius:6px; max-height:180px; overflow:auto; }
+@media (max-width:900px){
+    .grid { flex-direction:column; }
+    .token-big { font-size:40px; }
+>>>>>>> 2173be5bde8549fc19868ea69860c7e76fdfed38
