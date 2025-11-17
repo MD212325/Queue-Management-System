@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>Take a Token (Kiosk)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="icon" href="favicon.ico" />
+  <link rel="icon" href="/favicon.ico" />
   <style>
     :root{
       --card-bg:#fff;
@@ -93,7 +93,7 @@
     <div class="card-header">
         <h2>Take a Token</h2>
         <div class="STI-LOGO">
-            <a href="https://www.sti.edu/" class="STI-LOGO"><img src="sti-logo.png" alt="STI College Logo"/></a>
+            <a href="https://www.sti.edu/" class="STI-LOGO"><img src="/sti-logo.png" alt="STI College Logo"/></a>
         </div>
     </div>
 
@@ -171,10 +171,8 @@
 
 <script>
 /* ---------------- configuration ---------------- */
-/* IMPORTANT: replace with your server’s public VAPID key (Base64 URL-safe) */
-const VAPID_PUBLIC_KEY = 'REPLACE_WITH_YOUR_BASE64URL_VAPID_PUBLIC_KEY';
-
-const API = (window.location.port && window.location.port === '5173') ? 'http://192.168.18.34:4000' : window.location.origin;
+const VAPID_PUBLIC_KEY = 'BMBXF0FAO-57gzHhm48x6deXbU4pxyU5ey_hJB9VK03Ck5XoFnGxAgriY6zBqoJZApYfKV9YsM6sx6OXlbV6zgU'; // replace with your public VAPID key (Base64 URL-safe)
+const API = window.location.origin;
 const TICKET_STORE_KEY = 'kiosk_current_ticket';
 const SUBSCRIBE_STORE_KEY = 'kiosk_push_subscription';
 const POLL_INTERVAL_MS = 6000; // update position every 6s
@@ -202,7 +200,6 @@ function saveTicket(obj){ localStorage.setItem(TICKET_STORE_KEY, JSON.stringify(
 function loadTicket(){ try { return JSON.parse(localStorage.getItem(TICKET_STORE_KEY) || 'null'); } catch(e){ return null; } }
 function clearTicket(){ localStorage.removeItem(TICKET_STORE_KEY); }
 
-/* ----- up/down controls ----- */
 function bindUpDown(){
   list.querySelectorAll('.up').forEach(btn => btn.onclick = e => {
     const row = e.target.closest('.svc-row');
@@ -217,7 +214,7 @@ function bindUpDown(){
 }
 bindUpDown();
 
-/* ----------------- drag code (pointer-based) ----------------- */
+/* ------------- drag code ------------- */
 let dragging = null, ghost=null, placeholder=null, offsetY=0, rowWidth=0;
 function createGhost(row, pageX, pageY){
   ghost = row.cloneNode(true);
@@ -230,9 +227,7 @@ function createGhost(row, pageX, pageY){
   document.body.appendChild(ghost);
   ghost.querySelectorAll('button,input,select').forEach(el => el.disabled = true);
 }
-function createPlaceholder(height){
-  placeholder = document.createElement('div'); placeholder.className = 'placeholder'; placeholder.style.height = (height)+'px'; return placeholder;
-}
+function createPlaceholder(height){ placeholder = document.createElement('div'); placeholder.className = 'placeholder'; placeholder.style.height = (height)+'px'; return placeholder; }
 function onPointerDown(e){
   const handle = e.target.closest('.svc-handle');
   const row = e.target.closest('.svc-row');
@@ -397,7 +392,6 @@ function apiUrl(path){
 /* ------------------ Service Worker + Push helpers ------------------ */
 
 function urlBase64ToUint8Array(base64String) {
-  // standard helper for VAPID key conversion
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding)
     .replace(/\-/g, '+')
@@ -408,19 +402,19 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
-async function registerServiceWorkerAndSubscribe() {
+/* register SW and subscribe. if ticketId provided, send it with subscribe request */
+async function registerServiceWorkerAndSubscribe(ticketId) {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     console.log('Service Worker or Push not supported in this browser.');
     return false;
   }
 
   try {
+    // register the service worker from root scope
     const reg = await navigator.serviceWorker.register('/sw.js');
     console.log('Service worker registered:', reg);
 
-    // If we already have a stored subscription on server, skip subscribe step
-    const existing = localStorage.getItem(SUBSCRIBE_STORE_KEY);
-    // request permission explicitly if needed
+    // ask notification permission if default
     if (Notification.permission === 'default') {
       const perm = await Notification.requestPermission();
       console.log('Notification permission:', perm);
@@ -431,19 +425,24 @@ async function registerServiceWorkerAndSubscribe() {
       return false;
     }
 
-    // subscribe to push
-    const subscription = await reg.pushManager.getSubscription()
-      || await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-        });
+    // get existing subscription or create a new one
+    let subscription = await reg.pushManager.getSubscription();
+    if (!subscription) {
+      if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY === 'REPLACE_WITH_YOUR_BASE64URL_VAPID_PUBLIC_KEY') {
+        console.warn('VAPID public key not configured on the page. Push subscribe will fail without it.');
+      }
+      subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
 
-    // send subscription to server
     const subJson = subscription.toJSON ? subscription.toJSON() : subscription;
+    // send subscription to server, include ticketId if available
     await fetch(apiUrl('/subscribe'), {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ subscription: subJson })
+      body: JSON.stringify({ subscription: subJson, ticketId: ticketId || null })
     }).then(r => {
       if (!r.ok) console.warn('subscribe endpoint returned non-ok', r.status);
     }).catch(err => console.warn('subscribe send failed', err));
@@ -457,21 +456,34 @@ async function registerServiceWorkerAndSubscribe() {
   }
 }
 
-// allow the SW to message us (e.g. to show in-page popup while open)
-navigator.serviceWorker && navigator.serviceWorker.addEventListener && navigator.serviceWorker.addEventListener('message', evt => {
-  try {
-    const data = evt.data;
-    if (!data) return;
-    if (data.type === 'call') {
-      // payload: { token, service, body }
-      const token = data.token || '';
-      const svc = data.service || '';
-      showCallPopupForTicket(token, svc);
-      showToast(data.body || `Please proceed to ${svc}`, 6000);
-      try{ if(navigator.vibrate) navigator.vibrate([80,40,80]); }catch(e){}
+/* allow the SW to message us (e.g. to show in-page popup while open).
+   SW will post messages {type: 'called'|'served'|... , payload: {...}} */
+if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
+  navigator.serviceWorker.addEventListener('message', evt => {
+    try {
+      const data = evt.data;
+      if (!data) return;
+      if (data.type === 'call' || data.type === 'called') {
+        handleEventPayload(data.payload || {}, 'called');
+      } else if (data.type === 'served' || data.type === 'moved' || data.type === 'reassigned' || data.type === 'cancel_requested' || data.type === 'recalled') {
+        handleEventPayload(data.payload || {}, data.type);
+      } else if (data.type === 'notificationclick') {
+        const t = loadTicket();
+        if (t && t.id) {
+          fetch(apiUrl(`/ticket/${t.id}`)).then(r => r.ok ? r.json() : null).then(d => {
+            if (d) handleEventPayload(d, d.status || 'updated');
+          }).catch(()=>{});
+        }
+      } else {
+        if (data.payload && data.payload.id) {
+          handleEventPayload(data.payload, data.type || 'push');
+        }
+      }
+    } catch (e) {
+      console.warn('SW message handling error', e);
     }
-  } catch(e){}
-});
+  });
+}
 
 /* ------------------ Desktop Notifications & Call Popup (page-level) ------------------ */
 function ensureNotificationPermission() {
@@ -479,28 +491,32 @@ function ensureNotificationPermission() {
   if (Notification.permission === 'default') {
     Notification.requestPermission().then(permission => {
       console.log('Notification permission:', permission);
-      if (permission === 'granted') {
-        // register service worker and subscribe if not already
-        registerServiceWorkerAndSubscribe();
-      }
+      if (permission === 'granted') registerServiceWorkerAndSubscribe();
     }).catch(()=>{});
   } else if (Notification.permission === 'granted') {
     registerServiceWorkerAndSubscribe();
   }
 }
 
-function showDesktopNotification(title, body, tag) {
+/* Use ServiceWorkerRegistration.showNotification() if available (safer on many mobile browsers) */
+async function showDesktopNotification(title, body, tag) {
   if (!('Notification' in window)) return;
-  if (Notification.permission === 'granted') {
-    try {
-      const n = new Notification(title, {
-        body: body || '',
-        tag: tag || undefined,
-        renotify: true,
-        silent: false
-      });
-      n.onclick = function(e) { try { window.focus(); } catch (err) {} n.close(); };
-    } catch (err) { console.warn('Notification failed', err); }
+  if (Notification.permission !== 'granted') return;
+
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg && reg.showNotification) {
+      reg.showNotification(title, { body: body || '', tag: tag || undefined, renotify: true, silent: false });
+      return;
+    }
+  } catch (e) {
+    // fallback
+  }
+
+  try {
+    new Notification(title, { body: body || '', tag: tag || undefined });
+  } catch (err) {
+    console.warn('Notification failed', err);
   }
 }
 
@@ -517,7 +533,6 @@ function hideCallPopup(){ if (!callPopup) return; callPopup.style.display = 'non
 callPopupOk && callPopupOk.addEventListener('click', () => { hideCallPopup(); });
 
 /* ------------------ create ticket ------------------ */
-/* (kept same as your previous code) */
 btnGet.addEventListener('click', async function(){
   if(loadTicket()){
     alert('You already have a ticket. Cancel it first or wait until it is completed.');
@@ -557,8 +572,9 @@ btnGet.addEventListener('click', async function(){
     showToast(`Your token ${String(d.id).padStart(3,'0')} — keep this page open for updates`);
     await updatePositionForTicket();
 
-    // after ticket created, ensure subscription exists (ask for permissions / register sw)
-    ensureNotificationPermission();
+    // register service worker and attach subscription to this ticket (so server can push)
+    await registerServiceWorkerAndSubscribe(d.id);
+
   } catch (e) {
     console.error('kiosk error', e);
     alert('Network error creating token');
@@ -576,16 +592,19 @@ async function requestCancelOnServer(id, reason){
       body: JSON.stringify({ reason })
     });
     if(res.ok) return true;
+
     res = await fetch(apiUrl(`/ticket/${id}`), {
       method: 'PATCH',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ status: 'cancel_requested', cancel_reason: reason })
     });
     if(res.ok) return true;
+
     if(res.status === 401 || res.status === 403){
       alert('Cancel request could not be sent (staff-only). Please ask staff to help.');
       return false;
     }
+
     const text = await res.text().catch(()=> '');
     console.warn('cancel request non-ok', res.status, text);
     return false;
@@ -598,17 +617,34 @@ async function requestCancelOnServer(id, reason){
 cancelBtn.addEventListener('click', async () => {
   const t = loadTicket();
   if(!t) { alert('No ticket to cancel'); return; }
+
   let reason = prompt('Please enter reason for cancellation (this will be sent to staff):');
   if(reason === null) return;
   reason = String(reason).trim();
   if(!reason){
     if(!confirm('Send cancel request without a reason? Press OK to send without reason, Cancel to edit.')) return;
   }
-  t.cancel_requested = true; t.cancel_reason = reason || '(no reason provided)'; t.status = 'cancel_requested';
-  saveTicket(t); setUIForTicket(t); showToast('Sending cancel request to staff...');
+
+  t.cancel_requested = true;
+  t.cancel_reason = reason || '(no reason provided)';
+  t.status = 'cancel_requested';
+  saveTicket(t);
+  setUIForTicket(t);
+  showToast('Sending cancel request to staff...');
+
   const ok = await requestCancelOnServer(t.id, t.cancel_reason);
-  if(ok){ showToast('Cancel request sent — staff will review it.'); t.cancel_requested = true; saveTicket(t); setUIForTicket(t); }
-  else { showToast('Failed to send cancel request. Please ask staff directly.'); t.cancel_requested = false; t.cancel_reason = null; saveTicket(t); setUIForTicket(t); }
+  if(ok){
+    showToast('Cancel request sent — staff will review it.');
+    t.cancel_requested = true;
+    saveTicket(t);
+    setUIForTicket(t);
+  } else {
+    showToast('Failed to send cancel request. Please ask staff directly.');
+    t.cancel_requested = false;
+    t.cancel_reason = null;
+    saveTicket(t);
+    setUIForTicket(t);
+  }
 });
 
 /* ------------------ SSE listening ------------------ */
@@ -661,11 +697,26 @@ async function handleEventPayload(payload, type){
       const idx = t.services.indexOf(t.current_service);
       if(idx !== -1) t.service_index = idx;
     }
-  } else if(typeof payload.service_index !== 'undefined') {
-    const normalized = normalizeIndex(payload.service_index, payload.services || t.services || []);
-    if(typeof normalized !== 'undefined') {
+  } else if (typeof payload.service_index !== 'undefined') {
+    // payload.service_index may be 0-based or 1-based depending on server.
+    // Prefer zero-based if it fits the services array; otherwise treat as 1-based.
+    const svcList = Array.isArray(payload.services) ? payload.services : (Array.isArray(t.services) ? t.services : []);
+    const rawIndex = Number(payload.service_index);
+    let normalized;
+
+    if (Number.isFinite(rawIndex)) {
+      if (svcList && svcList.length && rawIndex >= 0 && rawIndex < svcList.length) {
+        normalized = Math.max(0, Math.floor(rawIndex));
+      } else if (svcList && svcList.length && rawIndex >= 1 && rawIndex <= svcList.length) {
+        normalized = Math.max(0, Math.floor(rawIndex) - 1);
+      } else {
+        normalized = normalizeIndex(rawIndex, svcList);
+      }
+    }
+
+    if (typeof normalized !== 'undefined') {
       t.service_index = normalized;
-      if(Array.isArray(t.services)) t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)];
+      if (Array.isArray(t.services)) t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)];
     }
   }
 
@@ -695,27 +746,16 @@ async function handleEventPayload(payload, type){
   }
 
   if(type === 'served'){
-    if(payload.to){
-      t.current_service = payload.to;
-      if(Array.isArray(t.services)){
-        const idx = t.services.indexOf(t.current_service);
-        t.service_index = idx !== -1 ? idx : t.service_index;
-      }
-      t.status = 'waiting';
-      saveTicket(t);
-      setUIForTicket(t);
-      showToast(`Moved to ${t.current_service}`);
-      beep(); try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
-      await updatePositionForTicket();
-      return;
-    }
-    if(payload.status === 'served' || payload.status === 'completed' || payload.status === 'done' || payload.final === true){
+    // treat final/served -> clear local ticket
+    if(payload.status === 'served' || payload.status === 'completed' || payload.status === 'done' || payload.final === true || payload.completed) {
       showToast('Your ticket has been served. Thank you!');
       beep(); try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
       clearTicket();
       setTimeout(()=> setUIForTicket(null), 400);
       return;
     }
+
+    // otherwise advance
     if(Array.isArray(t.services)){
       if(typeof t.service_index === 'undefined' || t.service_index >= (t.services.length - 1)){
         showToast('Your ticket has been served. Thank you!');
@@ -735,6 +775,7 @@ async function handleEventPayload(payload, type){
         return;
       }
     }
+
     showToast('Service recorded. Waiting for next update...');
     return;
   }

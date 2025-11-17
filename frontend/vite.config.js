@@ -6,19 +6,19 @@ export default defineConfig({
   plugins: [react()],
   server: {
 
+    host: true,
+    port: 5173,
+
     https: {
-        key: './certs/sti-queue-system-privateKey.key',
-        cert: './certs/sti-queue-system.crt'
+        key: './certs/192.168.18.34+2-key.pem',
+        cert: './certs/192.168.18.34+2.pem'
     },
 
     proxy: {
-      '/queue': { target: 'https://localhost:4000', changeOrigin: true },
-      '/events': { target: 'https://localhost:4000', changeOrigin: true },
-      '/ticket': { target: 'https://localhost:4000', changeOrigin: true },
-      '/next': { target: 'https://localhost:4000', changeOrigin: true },
-      '/serve': { target: 'https://localhost:4000', changeOrigin: true },
-      '/hold': { target: 'https://localhost:4000', changeOrigin: true },
-      '/recall': { target: 'https://localhost:4000', changeOrigin: true }
+      '/ticket': { target: 'http://localhost:4000', changeOrigin: true, secure: false },
+      '/queue':  { target: 'http://localhost:4000', changeOrigin: true, secure: false },
+      '/events': { target: 'http://localhost:4000', changeOrigin: true, secure: false },
+      '/subscribe': { target: 'http://localhost:4000', changeOrigin: true, secure: false }
     }
 
     }
