@@ -1,0 +1,845 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Take a Token (Kiosk)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="icon" href="/favicon.ico" />
+  <style>
+    :root{
+      --card-bg:#fff;
+      --svc-bg:#f9f9f9;
+      --btn-bg:#ffd100;
+      --btn-color:#0b4ea2;
+    }
+    body{font-family:Inter,Arial,Helvetica,sans-serif;margin:0;padding:18px;background:#ffffff;color:#111}
+    .card{max-width:520px;margin:18px auto;padding:18px;border-radius:12px;border:1px solid #eee;background:var(--card-bg);box-shadow:0 6px 20px rgba(0,0,0,0.06);}
+    .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    h2{margin:0 0 8px;font-weight:700}
+    .STI-LOGO {text-align:right;margin-bottom:12px}
+    .STI-LOGO img{max-width:80px;height:auto;}
+    label{font-weight:600;margin-top:12px;display:block}
+    input[type="text"], select{width:100%;padding:8px;border-radius:6px;border:1px solid #ccc;margin-top:6px;box-sizing:border-box}
+    .hint{font-size:13px;color:#666;margin-bottom:12px}
+    #svc-list{display:flex;flex-direction:column;gap:8px}
+    .svc-row{
+      display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;background:var(--svc-bg);border:1px solid #e6e6e6;
+      user-select:none; touch-action:none;
+    }
+    .svc-row .svc-handle{width:28px;height:28px;border-radius:6px;background:#fff;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:grab}
+    .svc-row .svc-check{transform:scale(1.1)}
+    .svc-title{flex:1;font-weight:600}
+    .svc-controls{display:flex;gap:6px}
+    .svc-controls button{padding:6px 8px;border-radius:6px;border:1px solid #ddd;background:#fff;cursor:pointer}
+    .btn{display:inline-block;padding:10px 12px;border-radius:8px;background:var(--btn-bg);color:var(--btn-color);border:none;font-weight:700;width:100%;box-shadow:0 3px 8px rgba(0,0,0,0.08)}
+    #resultBar{margin-top:12px;padding:10px;border-radius:6px;background:linear-gradient(90deg,#ffd66b,#bfe0ff);color:#002b66;display:none; font-weight:600}
+    #statusBox{margin-top:12px;padding:10px;border-radius:6px;background:#f1f8ff;color:#002b66;display:none}
+    .disabled{opacity:0.6;pointer-events:none}
+    .ghost { position:fixed; pointer-events:none; z-index:9999; width:calc(var(--row-width,320px)); transform:translate(-6px,-6px) scale(1.02); box-shadow:0 10px 30px rgba(0,0,0,0.25); opacity:0.98; transition:transform 120ms ease; border-radius:8px; background:#fff; }
+    .placeholder { height:48px; border-radius:8px; border:2px dashed #cbd5e1; background:linear-gradient(0deg, rgba(255,255,255,0.02), rgba(255,255,255,0.02)); margin:0; }
+
+    /* toast */
+    .toast {
+      position:fixed;
+      left:50%;
+      transform:translateX(-50%);
+      bottom:36px;
+      background:#111;
+      color:#fff;
+      padding:12px 16px;
+      border-radius:8px;
+      box-shadow:0 8px 24px rgba(0,0,0,0.35);
+      z-index:10000;
+      display:none;
+      font-weight:600;
+    }
+
+    /* Call popup (big visual indicator) */
+    .call-popup {
+      position:fixed;
+      inset:0;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:12000;
+      background: rgba(0,0,0,0.45);
+      -webkit-backdrop-filter: blur(4px);
+      backdrop-filter: blur(4px);
+    }
+    .call-popup-inner {
+      width:min(560px,92%);
+      background:#fff;
+      border-radius:12px;
+      padding:24px;
+      text-align:center;
+      box-shadow:0 12px 40px rgba(0,0,0,0.4);
+      animation:popupIn 220ms ease;
+    }
+    .call-title { font-size:18px; color:#333; font-weight:700; margin-bottom:8px; }
+    .call-token { font-size:64px; font-weight:900; letter-spacing:4px; margin:8px 0; color:#002b66; }
+    .call-service { font-size:20px; color:#0b4ea2; margin-bottom:12px; font-weight:700; }
+    .call-popup-inner button { padding:10px 14px; border-radius:8px; background:#ffd100; color:#0b4ea2; border:none; font-weight:700; cursor:pointer; }
+    @keyframes popupIn { from { transform: translateY(8px) scale(.98); opacity:0 } to { transform: translateY(0) scale(1); opacity:1 } }
+
+    @media (max-width:520px){
+      .card{margin:12px;padding:14px}
+      .svc-row{padding:12px}
+      .call-token { font-size:48px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="kiosk-card">
+    <div class="card-header">
+        <h2>Take a Token</h2>
+        <div class="STI-LOGO">
+            <a href="https://www.sti.edu/" class="STI-LOGO"><img src="/sti-logo.png" alt="STI College Logo"/></a>
+        </div>
+    </div>
+
+    <div class="hint">Select which services you want, then order them (first → last). You can drag rows, use the ↑/↓ buttons, or touch-and-drag on phones.</div>
+
+    <div id="resultBar" role="status"></div>
+
+    <div id="svc-list" aria-label="Services list">
+      <div class="svc-row" data-svc="registrar" draggable="false">
+        <div class="svc-handle" aria-hidden="true">≡</div>
+        <input type="checkbox" class="svc-check" checked />
+        <div class="svc-title">Registrar</div>
+        <div class="svc-controls">
+          <button class="up" aria-label="Move up">↑</button>
+          <button class="down" aria-label="Move down">↓</button>
+        </div>
+      </div>
+
+      <div class="svc-row" data-svc="cashier" draggable="false">
+        <div class="svc-handle" aria-hidden="true">≡</div>
+        <input type="checkbox" class="svc-check" checked />
+        <div class="svc-title">Cashier</div>
+        <div class="svc-controls">
+          <button class="up">↑</button><button class="down">↓</button>
+        </div>
+      </div>
+
+      <div class="svc-row" data-svc="admissions" draggable="false">
+        <div class="svc-handle" aria-hidden="true">≡</div>
+        <input type="checkbox" class="svc-check" checked />
+        <div class="svc-title">Admissions</div>
+        <div class="svc-controls">
+          <button class="up">↑</button><button class="down">↓</button>
+        </div>
+      </div>
+
+      <div class="svc-row" data-svc="records" draggable="false">
+        <div class="svc-handle" aria-hidden="true">≡</div>
+        <input type="checkbox" class="svc-check" checked />
+        <div class="svc-title">Records</div>
+        <div class="svc-controls">
+          <button class="up">↑</button><button class="down">↓</button>
+        </div>
+      </div>
+    </div>
+
+    <label style="display:block;margin-top:12px">Name (optional)</label>
+    <input id="name" type="text" placeholder="Your name" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc">
+
+    <label style="display:block;margin-top:12px">Type</label>
+    <select id="quer" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ccc">
+      <option>Student</option><option>Faculty/Staff</option><option>Visitor</option><option>Other</option>
+    </select>
+
+    <button id="get" class="btn" style="margin-top:16px">Get Token</button>
+
+    <div id="statusBox" style="margin-top:12px;"></div>
+
+    <div style="margin-top:12px">
+      <button id="cancelBtn" style="display:none;background:#d9534f;color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer">Cancel Ticket</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">Notification</div>
+
+  <!-- Call popup -->
+  <div class="call-popup" id="callPopup" role="dialog" aria-modal="true">
+    <div class="call-popup-inner" id="callPopupInner">
+      <div class="call-title">Please proceed to</div>
+      <div id="callPopupService" class="call-service">SERVICE</div>
+      <div id="callPopupToken" class="call-token">000</div>
+      <div style="margin-top:8px"><button id="callPopupOk">I am on my way</button></div>
+    </div>
+  </div>
+
+<script>
+/* ---------------- configuration ---------------- */
+const VAPID_PUBLIC_KEY = 'BMBXF0FAO-57gzHhm48x6deXbU4pxyU5ey_hJB9VK03Ck5XoFnGxAgriY6zBqoJZApYfKV9YsM6sx6OXlbV6zgU'; // replace with your public VAPID key (Base64 URL-safe)
+const API = window.location.origin;
+const TICKET_STORE_KEY = 'kiosk_current_ticket';
+const SUBSCRIBE_STORE_KEY = 'kiosk_push_subscription';
+const POLL_INTERVAL_MS = 6000; // update position every 6s
+
+/* ---------- helper DOM / util ---------- */
+const list = document.getElementById('svc-list');
+const btnGet = document.getElementById('get');
+const statusBox = document.getElementById('statusBox');
+const resultBar = document.getElementById('resultBar');
+const cancelBtn = document.getElementById('cancelBtn');
+const toast = document.getElementById('toast');
+
+const callPopup = document.getElementById('callPopup');
+const callPopupService = document.getElementById('callPopupService');
+const callPopupToken = document.getElementById('callPopupToken');
+const callPopupOk = document.getElementById('callPopupOk');
+
+function getSelectedOrderedServices(){
+  return Array.from(list.querySelectorAll('.svc-row'))
+    .filter(it => it.querySelector('.svc-check').checked)
+    .map(it => it.dataset.svc);
+}
+
+function saveTicket(obj){ localStorage.setItem(TICKET_STORE_KEY, JSON.stringify(obj)); }
+function loadTicket(){ try { return JSON.parse(localStorage.getItem(TICKET_STORE_KEY) || 'null'); } catch(e){ return null; } }
+function clearTicket(){ localStorage.removeItem(TICKET_STORE_KEY); }
+
+function bindUpDown(){
+  list.querySelectorAll('.up').forEach(btn => btn.onclick = e => {
+    const row = e.target.closest('.svc-row');
+    const prev = row.previousElementSibling;
+    if(prev) row.parentNode.insertBefore(row, prev);
+  });
+  list.querySelectorAll('.down').forEach(btn => btn.onclick = e => {
+    const row = e.target.closest('.svc-row');
+    const next = row.nextElementSibling;
+    if(next) row.parentNode.insertBefore(row, next.nextSibling || next);
+  });
+}
+bindUpDown();
+
+/* ------------- drag code ------------- */
+let dragging = null, ghost=null, placeholder=null, offsetY=0, rowWidth=0;
+function createGhost(row, pageX, pageY){
+  ghost = row.cloneNode(true);
+  ghost.classList.add('ghost');
+  rowWidth = Math.min(520, list.getBoundingClientRect().width || 320);
+  ghost.style.setProperty('--row-width', rowWidth + 'px');
+  ghost.style.width = rowWidth + 'px';
+  ghost.style.left = (pageX - 10) + 'px';
+  ghost.style.top = (pageY - offsetY) + 'px';
+  document.body.appendChild(ghost);
+  ghost.querySelectorAll('button,input,select').forEach(el => el.disabled = true);
+}
+function createPlaceholder(height){ placeholder = document.createElement('div'); placeholder.className = 'placeholder'; placeholder.style.height = (height)+'px'; return placeholder; }
+function onPointerDown(e){
+  const handle = e.target.closest('.svc-handle');
+  const row = e.target.closest('.svc-row');
+  if(!row) return;
+  if(!handle && e.target.closest('.svc-check')) return;
+  e.preventDefault();
+  dragging = row;
+  const rect = row.getBoundingClientRect();
+  const pageY = ('touches' in e && e.touches && e.touches[0]) ? e.touches[0].pageY : (e.pageY || e.clientY);
+  offsetY = pageY - rect.top;
+  const ph = createPlaceholder(rect.height);
+  row.parentNode.insertBefore(ph, row);
+  row.style.display = 'none';
+  createGhost(row, (e.pageX || (e.touches && e.touches[0].pageX)), pageY);
+
+  if(e.pointerId && e.target.setPointerCapture) {
+    try { e.target.setPointerCapture(e.pointerId); } catch(err) {}
+  }
+  if(window.PointerEvent){
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerUp);
+  } else {
+    document.addEventListener('touchmove', onPointerMove, {passive:false});
+    document.addEventListener('touchend', onPointerUp);
+    document.addEventListener('touchcancel', onPointerUp);
+    document.addEventListener('mousemove', onPointerMove);
+    document.addEventListener('mouseup', onPointerUp);
+  }
+}
+function onPointerMove(e){
+  if(!dragging || !ghost || !placeholder) return;
+  if(e.cancelable) e.preventDefault();
+  const touch = (e.touches && e.touches[0]) || e;
+  const pageY = touch.pageY, pageX = touch.pageX;
+  ghost.style.left = (pageX - 10) + 'px';
+  ghost.style.top = (pageY - offsetY) + 'px';
+  const rows = Array.from(list.querySelectorAll('.svc-row')).filter(r => r !== dragging);
+  let inserted = false;
+  for(const r of rows){
+    const rect = r.getBoundingClientRect();
+    const mid = rect.top + rect.height/2;
+    if(pageY < mid){
+      if(placeholder.nextSibling !== r) list.insertBefore(placeholder, r);
+      inserted = true;
+      break;
+    }
+  }
+  if(!inserted){
+    if(list.lastElementChild !== placeholder) list.appendChild(placeholder);
+  }
+}
+function onPointerUp(e){
+  if(!dragging) return;
+  if(ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+  if(placeholder && placeholder.parentNode){
+    placeholder.parentNode.insertBefore(dragging, placeholder);
+    placeholder.parentNode.removeChild(placeholder);
+  } else {
+    list.appendChild(dragging);
+  }
+  dragging.style.display = '';
+  ghost = null; placeholder = null; dragging = null; offsetY = 0;
+  if(window.PointerEvent){
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', onPointerUp);
+    document.removeEventListener('pointercancel', onPointerUp);
+  } else {
+    document.removeEventListener('touchmove', onPointerMove);
+    document.removeEventListener('touchend', onPointerUp);
+    document.removeEventListener('touchcancel', onPointerUp);
+    document.removeEventListener('mousemove', onPointerMove);
+    document.removeEventListener('mouseup', onPointerUp);
+  }
+  bindUpDown();
+}
+function bindDrag(){
+  list.querySelectorAll('.svc-row').forEach(row => {
+    const handle = row.querySelector('.svc-handle') || row;
+    if(window.PointerEvent){
+      handle.removeEventListener('pointerdown', onPointerDown);
+      handle.addEventListener('pointerdown', onPointerDown);
+    } else {
+      handle.removeEventListener('touchstart', onPointerDown);
+      handle.removeEventListener('mousedown', onPointerDown);
+      handle.addEventListener('touchstart', function(e){ onPointerDown(e); }, {passive:false});
+      handle.addEventListener('mousedown', function(e){ onPointerDown(e); });
+    }
+  });
+}
+bindDrag();
+
+/* ------------------ normalization helper ------------------ */
+function normalizeIndex(service_index, services) {
+  if (typeof service_index === 'undefined' || service_index === null) return undefined;
+  const n = Number(service_index);
+  if (!Number.isFinite(n)) return undefined;
+  if (Array.isArray(services) && n >= 1 && n <= services.length) {
+    return Math.max(0, n - 1);
+  }
+  return Math.max(0, Math.floor(n));
+}
+
+/* ------------------ UI / ticket helpers ------------------ */
+function setUIForTicket(ticket) {
+  if(!ticket) {
+    resultBar.style.display = 'none';
+    statusBox.style.display = 'none';
+    cancelBtn.style.display = 'none';
+    btnGet.disabled = false;
+    btnGet.classList.remove('disabled');
+    return;
+  }
+  resultBar.style.display = 'block';
+  resultBar.textContent = ticket.displayText || (`Your token: ${String(ticket.id).padStart(3,'0')}`);
+  statusBox.style.display = 'block';
+  const pos = (typeof ticket._position !== 'undefined') ? ` — position: ${ticket._position}` : '';
+  const cancelLine = ticket.cancel_reason ? `<div style="margin-top:6px;font-size:13px;color:#a00"><strong>Cancel request:</strong> ${escapeHtml(ticket.cancel_reason)}</div>` : '';
+  statusBox.innerHTML = `<div style="font-weight:600">Your token: ${String(ticket.id).padStart(3,'0')} — waiting at <strong>${ticket.current_service||'...'}</strong>${pos}</div>
+    <div style="font-size:13px;margin-top:6px">Services: ${ticket.services ? ticket.services.join(' → ') : ''}</div>
+    ${cancelLine}`;
+  cancelBtn.style.display = 'inline-block';
+  cancelBtn.textContent = ticket.cancel_requested ? 'Request Cancel (sent)' : 'Cancel Ticket';
+  cancelBtn.disabled = !!ticket.cancel_requested;
+  btnGet.disabled = true;
+  btnGet.classList.add('disabled');
+}
+
+function showToast(text, ms=4000){
+  toast.textContent = text;
+  toast.style.display = 'block';
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=> toast.style.display='none', ms);
+}
+
+function beep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = 880;
+    g.gain.value = 0.02;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); setTimeout(()=>{ o.stop(); ctx.close(); }, 220);
+  }catch(e){}
+}
+
+/* escape small HTML for inline insertion */
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* -- helper to compose API URLs -- */
+function apiUrl(path){
+  if(!API) return path;
+  const trimmed = String(API).trim();
+  if(/^https?:\/\//i.test(trimmed)) {
+    return trimmed.replace(/\/$/,'') + (path.startsWith('/') ? path : ('/' + path));
+  }
+  return (window.location.origin.replace(/\/$/,'') + (trimmed.startsWith('/') ? trimmed : '')).replace(/\/$/,'') + (path.startsWith('/') ? path : ('/' + path));
+}
+
+/* ------------------ Service Worker + Push helpers ------------------ */
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/\-/g, '+')
+    .replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+/* register SW and subscribe. if ticketId provided, send it with subscribe request */
+async function registerServiceWorkerAndSubscribe(ticketId) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    console.log('Service Worker or Push not supported in this browser.');
+    return false;
+  }
+
+  try {
+    // register the service worker from root scope
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    console.log('Service worker registered:', reg);
+
+    // ask notification permission if default
+    if (Notification.permission === 'default') {
+      const perm = await Notification.requestPermission();
+      console.log('Notification permission:', perm);
+    }
+
+    if (Notification.permission !== 'granted') {
+      console.log('Notifications not granted by user (will still show in-page popup while open).');
+      return false;
+    }
+
+    // get existing subscription or create a new one
+    let subscription = await reg.pushManager.getSubscription();
+    if (!subscription) {
+      if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY === 'REPLACE_WITH_YOUR_BASE64URL_VAPID_PUBLIC_KEY') {
+        console.warn('VAPID public key not configured on the page. Push subscribe will fail without it.');
+      }
+      subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
+
+    const subJson = subscription.toJSON ? subscription.toJSON() : subscription;
+    // send subscription to server, include ticketId if available
+    await fetch(apiUrl('/subscribe'), {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ subscription: subJson, ticketId: ticketId || null })
+    }).then(r => {
+      if (!r.ok) console.warn('subscribe endpoint returned non-ok', r.status);
+    }).catch(err => console.warn('subscribe send failed', err));
+
+    localStorage.setItem(SUBSCRIBE_STORE_KEY, JSON.stringify(subJson));
+    console.log('Push subscription done');
+    return true;
+  } catch (err) {
+    console.warn('Service worker / subscribe error', err);
+    return false;
+  }
+}
+
+/* allow the SW to message us (e.g. to show in-page popup while open).
+   SW will post messages {type: 'called'|'served'|... , payload: {...}} */
+if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
+  navigator.serviceWorker.addEventListener('message', evt => {
+    try {
+      const data = evt.data;
+      if (!data) return;
+      if (data.type === 'call' || data.type === 'called') {
+        handleEventPayload(data.payload || {}, 'called');
+      } else if (data.type === 'served' || data.type === 'moved' || data.type === 'reassigned' || data.type === 'cancel_requested' || data.type === 'recalled') {
+        handleEventPayload(data.payload || {}, data.type);
+      } else if (data.type === 'notificationclick') {
+        const t = loadTicket();
+        if (t && t.id) {
+          fetch(apiUrl(`/ticket/${t.id}`)).then(r => r.ok ? r.json() : null).then(d => {
+            if (d) handleEventPayload(d, d.status || 'updated');
+          }).catch(()=>{});
+        }
+      } else {
+        if (data.payload && data.payload.id) {
+          handleEventPayload(data.payload, data.type || 'push');
+        }
+      }
+    } catch (e) {
+      console.warn('SW message handling error', e);
+    }
+  });
+}
+
+/* ------------------ Desktop Notifications & Call Popup (page-level) ------------------ */
+function ensureNotificationPermission() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission().then(permission => {
+      console.log('Notification permission:', permission);
+      if (permission === 'granted') registerServiceWorkerAndSubscribe();
+    }).catch(()=>{});
+  } else if (Notification.permission === 'granted') {
+    registerServiceWorkerAndSubscribe();
+  }
+}
+
+/* Use ServiceWorkerRegistration.showNotification() if available (safer on many mobile browsers) */
+async function showDesktopNotification(title, body, tag) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg && reg.showNotification) {
+      reg.showNotification(title, { body: body || '', tag: tag || undefined, renotify: true, silent: false });
+      return;
+    }
+  } catch (e) {
+    // fallback
+  }
+
+  try {
+    new Notification(title, { body: body || '', tag: tag || undefined });
+  } catch (err) {
+    console.warn('Notification failed', err);
+  }
+}
+
+function showCallPopupForTicket(tokenStr, serviceName) {
+  if (!callPopup) return;
+  callPopupService.textContent = (serviceName || '').toUpperCase();
+  callPopupToken.textContent = tokenStr || '';
+  callPopup.style.display = 'flex';
+  try { window.focus(); } catch(e){}
+  clearTimeout(callPopup._hideT);
+  callPopup._hideT = setTimeout(()=> hideCallPopup(), 3600000);
+}
+function hideCallPopup(){ if (!callPopup) return; callPopup.style.display = 'none'; clearTimeout(callPopup._hideT); }
+callPopupOk && callPopupOk.addEventListener('click', () => { hideCallPopup(); });
+
+/* ------------------ create ticket ------------------ */
+btnGet.addEventListener('click', async function(){
+  if(loadTicket()){
+    alert('You already have a ticket. Cancel it first or wait until it is completed.');
+    return;
+  }
+  const btn = btnGet;
+  const name = document.getElementById('name').value.trim();
+  const quer = document.getElementById('quer').value;
+  const services = getSelectedOrderedServices();
+  if (!services.length) { alert('Please select at least one service'); return; }
+
+  btn.disabled = true; btn.classList.add('disabled');
+  try {
+    const resp = await fetch(apiUrl('/ticket'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, services, quer_type: quer })
+    });
+    const d = await (resp.ok ? resp.json() : resp.json().catch(()=>({error:resp.statusText})));
+    if (!resp.ok) { alert('Failed: ' + (d.error || d.detail || resp.statusText)); return; }
+
+    const srvServices = Array.isArray(d.services) ? d.services : services;
+    const normalizedIndex = normalizeIndex(d.service_index, srvServices);
+    const ticket = {
+      id: d.id,
+      services: srvServices,
+      quer_type: d.quer_type || quer,
+      service_index: (typeof normalizedIndex !== 'undefined') ? normalizedIndex : 0,
+      current_service: (Array.isArray(srvServices) && srvServices.length) ? ( (typeof normalizedIndex !== 'undefined') ? srvServices[normalizedIndex] : srvServices[0]) : (services[0] || null),
+      status: d.status || 'waiting',
+      created_at: d.created_at || null,
+      cancel_requested: false,
+      cancel_reason: null
+    };
+    saveTicket(ticket);
+    setUIForTicket(ticket);
+    showToast(`Your token ${String(d.id).padStart(3,'0')} — keep this page open for updates`);
+    await updatePositionForTicket();
+
+    // register service worker and attach subscription to this ticket (so server can push)
+    await registerServiceWorkerAndSubscribe(d.id);
+
+  } catch (e) {
+    console.error('kiosk error', e);
+    alert('Network error creating token');
+  } finally {
+    btn.disabled = false; btn.classList.remove('disabled');
+  }
+});
+
+/* ------------------ cancel request flow ------------------ */
+async function requestCancelOnServer(id, reason){
+  try {
+    let res = await fetch(apiUrl(`/ticket/${id}/request_cancel`), {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ reason })
+    });
+    if(res.ok) return true;
+
+    res = await fetch(apiUrl(`/ticket/${id}`), {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ status: 'cancel_requested', cancel_reason: reason })
+    });
+    if(res.ok) return true;
+
+    if(res.status === 401 || res.status === 403){
+      alert('Cancel request could not be sent (staff-only). Please ask staff to help.');
+      return false;
+    }
+
+    const text = await res.text().catch(()=> '');
+    console.warn('cancel request non-ok', res.status, text);
+    return false;
+  } catch(err){
+    console.warn('requestCancelOnServer error', err);
+    return false;
+  }
+}
+
+cancelBtn.addEventListener('click', async () => {
+  const t = loadTicket();
+  if(!t) { alert('No ticket to cancel'); return; }
+
+  let reason = prompt('Please enter reason for cancellation (this will be sent to staff):');
+  if(reason === null) return;
+  reason = String(reason).trim();
+  if(!reason){
+    if(!confirm('Send cancel request without a reason? Press OK to send without reason, Cancel to edit.')) return;
+  }
+
+  t.cancel_requested = true;
+  t.cancel_reason = reason || '(no reason provided)';
+  t.status = 'cancel_requested';
+  saveTicket(t);
+  setUIForTicket(t);
+  showToast('Sending cancel request to staff...');
+
+  const ok = await requestCancelOnServer(t.id, t.cancel_reason);
+  if(ok){
+    showToast('Cancel request sent — staff will review it.');
+    t.cancel_requested = true;
+    saveTicket(t);
+    setUIForTicket(t);
+  } else {
+    showToast('Failed to send cancel request. Please ask staff directly.');
+    t.cancel_requested = false;
+    t.cancel_reason = null;
+    saveTicket(t);
+    setUIForTicket(t);
+  }
+});
+
+/* ------------------ SSE listening ------------------ */
+function startSSEForKiosk(){
+  try {
+    const es = new EventSource(apiUrl('/events'));
+    es.addEventListener('open', () => console.log('SSE open'));
+    es.addEventListener('error', (e) => console.warn('SSE error', e));
+    const handleRaw = (e, type) => {
+      let payload = null;
+      try { payload = typeof e.data === 'string' ? JSON.parse(e.data) : e.data } catch(err) { payload = null; }
+      console.log('SSE event', type, payload);
+      handleEventPayload(payload, type);
+    };
+    es.addEventListener('called', e => handleRaw(e,'called'));
+    es.addEventListener('moved', e => handleRaw(e,'moved'));
+    es.addEventListener('reassigned', e => handleRaw(e,'reassigned'));
+    es.addEventListener('served', e => handleRaw(e,'served'));
+    es.addEventListener('deleted', e => handleRaw(e,'deleted'));
+    es.addEventListener('updated', e => handleRaw(e,'updated'));
+    es.addEventListener('created', e => {}); // noop
+  } catch(err){
+    console.warn('SSE not available', err);
+  }
+}
+
+/* ------------------ robust event handler (payload-first) ------------------ */
+async function handleEventPayload(payload, type){
+  if(!payload || typeof payload.id === 'undefined') return;
+  const t = loadTicket();
+  if(!t) return;
+  if(payload.id !== t.id) return;
+
+  console.log('Handling SSE for our ticket:', type, payload);
+
+  if(Array.isArray(payload.services)) t.services = payload.services;
+  if(typeof payload.cancel_reason !== 'undefined') t.cancel_reason = payload.cancel_reason;
+  if(typeof payload.cancel_requested !== 'undefined') t.cancel_requested = !!payload.cancel_requested;
+
+  if(payload.to) {
+    t.current_service = String(payload.to);
+    if(Array.isArray(t.services)) {
+      const idx = t.services.indexOf(t.current_service);
+      if(idx !== -1) t.service_index = idx;
+    }
+  } else if(payload.service || payload.called_service) {
+    const svcName = payload.service || payload.called_service;
+    t.current_service = String(svcName);
+    if(Array.isArray(t.services)){
+      const idx = t.services.indexOf(t.current_service);
+      if(idx !== -1) t.service_index = idx;
+    }
+  } else if (typeof payload.service_index !== 'undefined') {
+    // payload.service_index may be 0-based or 1-based depending on server.
+    // Prefer zero-based if it fits the services array; otherwise treat as 1-based.
+    const svcList = Array.isArray(payload.services) ? payload.services : (Array.isArray(t.services) ? t.services : []);
+    const rawIndex = Number(payload.service_index);
+    let normalized;
+
+    if (Number.isFinite(rawIndex)) {
+      if (svcList && svcList.length && rawIndex >= 0 && rawIndex < svcList.length) {
+        normalized = Math.max(0, Math.floor(rawIndex));
+      } else if (svcList && svcList.length && rawIndex >= 1 && rawIndex <= svcList.length) {
+        normalized = Math.max(0, Math.floor(rawIndex) - 1);
+      } else {
+        normalized = normalizeIndex(rawIndex, svcList);
+      }
+    }
+
+    if (typeof normalized !== 'undefined') {
+      t.service_index = normalized;
+      if (Array.isArray(t.services)) t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)];
+    }
+  }
+
+  if(payload.status) t.status = payload.status;
+  if(typeof t.service_index === 'undefined') t.service_index = 0;
+  if(!t.current_service && Array.isArray(t.services) && t.services.length) t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)];
+
+  saveTicket(t);
+  setUIForTicket(t);
+
+  if(type === 'called'){
+    const svc = payload.called_service || payload.service || t.current_service || 'service';
+    showToast(`Your token ${String(t.id).padStart(3,'0')} is called at ${svc}`);
+    beep(); try{ if(navigator.vibrate) navigator.vibrate([80,40,80]); }catch(e){}
+    showDesktopNotification(`Token ${String(t.id).padStart(3,'0')} called`, `Please proceed to ${svc}`, `ticket-${t.id}-called`);
+    const displayToken = (payload.displayToken || ((svc && svc[0]) ? svc[0].toUpperCase()+String(t.id).padStart(3,'0') : String(t.id).padStart(3,'0')));
+    showCallPopupForTicket(displayToken, svc);
+    await updatePositionForTicket();
+    return;
+  }
+
+  if(type === 'moved' || type === 'reassigned'){
+    showToast(`Your ticket moved to ${t.current_service || 'next service'}`);
+    beep(); try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
+    await updatePositionForTicket();
+    return;
+  }
+
+  if(type === 'served'){
+    // treat final/served -> clear local ticket
+    if(payload.status === 'served' || payload.status === 'completed' || payload.status === 'done' || payload.final === true || payload.completed) {
+      showToast('Your ticket has been served. Thank you!');
+      beep(); try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
+      clearTicket();
+      setTimeout(()=> setUIForTicket(null), 400);
+      return;
+    }
+
+    // otherwise advance
+    if(Array.isArray(t.services)){
+      if(typeof t.service_index === 'undefined' || t.service_index >= (t.services.length - 1)){
+        showToast('Your ticket has been served. Thank you!');
+        beep(); try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
+        clearTicket();
+        setTimeout(()=> setUIForTicket(null), 400);
+        return;
+      } else {
+        t.service_index = Math.min(t.service_index + 1, t.services.length - 1);
+        t.current_service = t.services[t.service_index];
+        t.status = 'waiting';
+        saveTicket(t);
+        setUIForTicket(t);
+        showToast(`Moved to ${t.current_service}`);
+        beep(); try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
+        await updatePositionForTicket();
+        return;
+      }
+    }
+
+    showToast('Service recorded. Waiting for next update...');
+    return;
+  }
+
+  if(type === 'deleted'){
+    showToast('Your ticket was removed by staff.');
+    clearTicket();
+    setTimeout(()=> setUIForTicket(null), 400);
+    return;
+  }
+
+  saveTicket(t); setUIForTicket(t); await updatePositionForTicket();
+}
+
+/* ------------------ position helper (best-effort) ------------------ */
+async function updatePositionForTicket(){
+  const t = loadTicket();
+  if(!t) return;
+  try {
+    const r = await fetch(apiUrl('/queue'));
+    if(!r.ok){
+      console.warn('updatePositionForTicket: /queue returned', r.status);
+      return;
+    }
+    const q = await r.json();
+    if(!Array.isArray(q)) return;
+    const svc = t.current_service || (Array.isArray(t.services) && t.services[0]);
+    const ourKey = t.created_at ? new Date(t.created_at).getTime() : (t.id || 0);
+    let position = 1;
+    for(const item of q){
+      try {
+        let itemServices = Array.isArray(item.services) ? item.services : (typeof item.services === 'string' ? JSON.parse(item.services||'[]') : []);
+        let itemIndexRaw = (typeof item.service_index !== 'undefined' ? item.service_index : undefined);
+        let itemIndex = (typeof itemIndexRaw !== 'undefined') ? normalizeIndex(itemIndexRaw, itemServices) : 0;
+        const itemCur = (Array.isArray(itemServices) && itemServices.length > itemIndex) ? itemServices[itemIndex] : (item.called_service || item.service || null);
+        if(!itemCur || itemCur !== svc) continue;
+        if(item.id === t.id) continue;
+        const itemKey = item.created_at ? new Date(item.created_at).getTime() : (item.id || 0);
+        if(itemKey <= ourKey) position++;
+      } catch(e){}
+    }
+    t._position = position;
+    saveTicket(t);
+    setUIForTicket(t);
+  } catch(err){
+    console.warn('updatePositionForTicket failed', err);
+  }
+}
+
+/* ------------------ initialization ------------------ */
+(function init(){
+  ensureNotificationPermission();
+  const t = loadTicket();
+  if(t) {
+    t.service_index = normalizeIndex(t.service_index, t.services || []);
+    if(!t.current_service && Array.isArray(t.services) && t.services.length) t.current_service = t.services[Math.min(t.service_index||0, (t.services.length-1))];
+    saveTicket(t);
+    setUIForTicket(t);
+    updatePositionForTicket();
+  }
+  startSSEForKiosk();
+  setInterval(async () => { if(loadTicket()) await updatePositionForTicket(); }, POLL_INTERVAL_MS);
+  bindDrag();
+})();
+</script>
+</body>
+</html>
