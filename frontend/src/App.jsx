@@ -173,7 +173,7 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
       flex:1, minWidth:260, margin:10, padding:10, borderRadius:6, background:'#0f2940', color:'#fff', boxShadow:'0 6px 16px rgba(0,0,0,0.2)'
     }}>
       <h3 style={{textAlign:'center', margin:0, padding:8, fontSize:16, letterSpacing:1}}>{service.toUpperCase()}</h3>
-      <button style={{ width:'100%', margin:'10px 0' }} onClick={() => onCallNext(service)}>
+      <button style={{ width:'100%', margin:'10px 0' }} onClick={() => onCallNext && onCallNext(service)}>
         Call Next ({service})
       </button>
 
@@ -198,11 +198,11 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
             ) : null}
 
             <div style={{marginTop:8}}>
-              <button onClick={() => onServe(called.id, service)} style={{marginRight:6}}>Serve</button>
-              <button onClick={() => onHold(called.id)} style={{marginRight:6}}>Hold</button>
-              <button onClick={() => onDelete(called.id)} className="delete" style={{marginRight:6}}>Delete</button>
+              <button onClick={() => onServe && onServe(called.id, service)} style={{marginRight:6}}>Serve</button>
+              <button onClick={() => onHold && onHold(called.id)} style={{marginRight:6}}>Hold</button>
+              <button onClick={() => onDelete && onDelete(called.id)} className="delete" style={{marginRight:6}}>Delete</button>
               {called.cancel_requested ? (
-                <button onClick={() => onClearCancel(called.id)}>Clear Cancel Request</button>
+                <button onClick={() => onClearCancel && onClearCancel(called.id)}>Clear Cancel Request</button>
               ) : null}
             </div>
           </div>
@@ -237,16 +237,16 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
                 <td style={{padding:6}}>
                   <div className="actions">
                     <button
-                      onClick={() => onServe(q.id, service)}
+                      onClick={() => onServe && onServe(q.id, service)}
                       disabled={!(q.status === 'called' && q.called_service === service)}
                       title={q.status === 'called' && q.called_service === service ? 'Serve' : 'Ticket not called here'}
                     >
                       Serve
                     </button>
-                    <button onClick={() => onHold(q.id)}>Hold</button>
-                    {q.status === 'hold' ? <button onClick={() => onRecall(q.id)}>Recall</button> : null}
-                    <button className="delete" onClick={() => onDelete(q.id)}>Delete</button>
-                    {q.cancel_requested ? <button onClick={() => onClearCancel(q.id)}>Clear Cancel</button> : null}
+                    <button onClick={() => onHold && onHold(q.id)}>Hold</button>
+                    {q.status === 'hold' ? <button onClick={() => onRecall && onRecall(q.id)}>Recall</button> : null}
+                    <button className="delete" onClick={() => onDelete && onDelete(q.id)}>Delete</button>
+                    {q.cancel_requested ? <button onClick={() => onClearCancel && onClearCancel(q.id)}>Clear Cancel</button> : null}
                   </div>
                 </td>
               </tr>
@@ -260,6 +260,7 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
 
 function LoginOverlay({ onLogin }) {
   const [key, setKey] = useState(localStorage.getItem('staff_key') || '');
+  const [role, setRole] = useState(localStorage.getItem('staff_role') || 'All');
   const DEFAULT_STAFF_KEY = STAFF_KEY;
 
   return (
@@ -272,14 +273,28 @@ function LoginOverlay({ onLogin }) {
       <div style={{width:420, padding:24, background:'#fff', borderRadius:8, boxShadow:'0 10px 30px rgba(0,0,0,0.2)'}}>
         <a href="https://sti.edu"><img src="sti-logo.png" alt="STI Logo" style={{width:64, display:'block', margin:'0 auto 12px'}}/></a>
         <h2>Admin Login</h2>
-        <p>Enter staff key (stored in this browser session).</p>
-        <input id='keyInput' value={key} onChange={e=>setKey(e.target.value)} style={{width:'100%', padding:8, marginBottom:12}}/>
+        <p>Enter staff key (stored in this browser session) and choose your role.</p>
+
+        <div style={{marginBottom:8}}>
+          <label style={{display:'block', fontWeight:600}}>Staff Key</label>
+          <input id='keyInput' value={key} onChange={e=>setKey(e.target.value)} style={{width:'95%', padding:8, marginBottom:12}}/>
+        </div>
+
+        <div style={{marginBottom:12}}>
+          <label style={{display:'block', fontWeight:600}}>Role</label>
+          <select value={role} onChange={e=>setRole(e.target.value)} style={{width:'100%', padding:8}}>
+            <option value="All">All (full view)</option>
+            {AVAILABLE_SERVICES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+        </div>
+
         <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
           <button onClick={() => {
             if (!key) return alert('Enter key');
             if (key !== DEFAULT_STAFF_KEY) return alert('Wrong staff key');
             localStorage.setItem('staff_key', key);
-            onLogin(key);
+            localStorage.setItem('staff_role', role);
+            onLogin(key, role);
           }}>Login</button>
         </div>
       </div>
@@ -294,6 +309,7 @@ export default function App(){
   const [querType, setQuerType] = useState(QUER_TYPES[0]);
   const [stats, setStats] = useState({waiting:0, served:0});
   const [staffKey, setStaffKey] = useState(localStorage.getItem('staff_key') || '');
+  const [staffRole, setStaffRole] = useState(localStorage.getItem('staff_role') || 'All');
 
   useEffect(() => {
     fetchQueue(); fetchStats();
@@ -305,13 +321,16 @@ export default function App(){
     return () => es.close();
   }, []);
 
-  function onLogin(key) {
+  function onLogin(key, role) {
     setStaffKey(key);
+    setStaffRole(role || 'All');
     fetchQueue(); fetchStats();
   }
   function onLogout() {
     localStorage.removeItem('staff_key');
+    localStorage.removeItem('staff_role');
     setStaffKey('');
+    setStaffRole('All');
   }
 
   function onServicesChange(orderedSelected) {
@@ -449,11 +468,17 @@ export default function App(){
     } catch (err) { console.error('clearCancel error', err); alert('Network error'); }
   }
 
+  // Determine which service cards to show based on staffRole
+  const servicesToShow = (staffRole && staffRole !== 'All')
+    ? AVAILABLE_SERVICES.filter(s => s.key === staffRole)
+    : AVAILABLE_SERVICES;
+
   return (
     <div style={{fontFamily:'sans-serif', padding:20}}>
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
         <h1>Registrar Queueing System</h1>
         <div>
+          <span style={{marginRight:12, fontSize:13, color:'#333'}}>Role: <strong>{(staffRole || 'All').toString()}</strong></span>
           {staffKey ? (
             <button onClick={onLogout} style={{marginLeft:12}}>Logout</button>
           ) : null}
@@ -485,7 +510,7 @@ export default function App(){
         </div>
 
         <div style={{flex:1, display:'flex', gap:12, overflowX:'auto'}}>
-          {AVAILABLE_SERVICES.map(svc => (
+          {servicesToShow.map(svc => (
             <ServiceTable
               key={svc.key}
               service={svc.key}
