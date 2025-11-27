@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import './display.css';
 
-const API = import.meta.env.VITE_API_URL || 'http://192.168.18.34:4000';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const STAFF_KEY = import.meta.env.VITE_STAFF_KEY || 'STI-QUEUE-KEY';
 
 async function safeJson(res) {
