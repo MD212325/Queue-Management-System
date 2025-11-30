@@ -363,6 +363,8 @@ function showToast(text, ms=4000){
   toast._t = setTimeout(()=> toast.style.display='none', ms);
 }
 
+var audio = new Audio('/notif.wav');
+
 function beep(){
   try{
     audio.addEventListener('ended', function() {
@@ -373,7 +375,7 @@ function beep(){
     document.getElementById('callPopupOk').addEventListener('click', function() {
         audio.pause();
         audio.currentTime = 0;
-  }catch(e){}
+  })}catch(e){}
 }
 
 /* escape small HTML for inline insertion */
@@ -843,4 +845,5 @@ async function updatePositionForTicket(){
 </script>
 </body>
 </html>
+
 
