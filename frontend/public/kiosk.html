@@ -365,14 +365,14 @@ function showToast(text, ms=4000){
 
 function beep(){
   try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.value = 880;
-    g.gain.value = 0.02;
-    o.connect(g); g.connect(ctx.destination);
-    o.start(); setTimeout(()=>{ o.stop(); ctx.close(); }, 220);
+    audio.addEventListener('ended', function() {
+        this.currentTime = 0;
+        this.play();
+    }, false);
+    audio.play();
+    document.getElementById('callPopupOk').addEventListener('click', function() {
+        audio.pause();
+        audio.currentTime = 0;
   }catch(e){}
 }
 
@@ -740,7 +740,7 @@ async function handleEventPayload(payload, type){
 
   if(type === 'moved' || type === 'reassigned'){
     showToast(`Your ticket moved to ${t.current_service || 'next service'}`);
-    beep(); try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
+    try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
     await updatePositionForTicket();
     return;
   }
@@ -749,7 +749,7 @@ async function handleEventPayload(payload, type){
     // treat final/served -> clear local ticket
     if(payload.status === 'served' || payload.status === 'completed' || payload.status === 'done' || payload.final === true || payload.completed) {
       showToast('Your ticket has been served. Thank you!');
-      beep(); try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
+      try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
       clearTicket();
       setTimeout(()=> setUIForTicket(null), 400);
       return;
@@ -759,7 +759,7 @@ async function handleEventPayload(payload, type){
     if(Array.isArray(t.services)){
       if(typeof t.service_index === 'undefined' || t.service_index >= (t.services.length - 1)){
         showToast('Your ticket has been served. Thank you!');
-        beep(); try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
+        try{ if(navigator.vibrate) navigator.vibrate([120]); }catch(e){}
         clearTicket();
         setTimeout(()=> setUIForTicket(null), 400);
         return;
@@ -770,7 +770,7 @@ async function handleEventPayload(payload, type){
         saveTicket(t);
         setUIForTicket(t);
         showToast(`Moved to ${t.current_service}`);
-        beep(); try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
+        try{ if(navigator.vibrate) navigator.vibrate([40,20]); }catch(e){}
         await updatePositionForTicket();
         return;
       }
@@ -843,3 +843,4 @@ async function updatePositionForTicket(){
 </script>
 </body>
 </html>
+
