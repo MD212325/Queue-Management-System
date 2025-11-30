@@ -231,7 +231,7 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
                 <td style={{padding:6}}>{q.quer_type || '—'}</td>
                 <td style={{padding:6}}>
                   {q.status === 'called' ? `Called (${q.called_service})` : q.status}
-                  <div style={{fontSize:11, color:'#cfe6ff'}}>Progress: {Number(q.service_index || 0) + 1}/{(q.services || []).length} — {(q.services || []).join(' → ')}</div>
+                  <div style={{fontSize:9, color:'#cfe6ff'}}>Progress: {Number(q.service_index || 0) + 1}/{(q.services || []).length} — {(q.services || []).join(' → ')}</div>
                   {q.cancel_requested ? <div style={{color:'#ffb3b3', fontSize:12, marginTop:6}}>Cancel requested</div> : null}
                 </td>
                 <td style={{padding:6}}>
