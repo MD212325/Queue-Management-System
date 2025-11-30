@@ -171,7 +171,7 @@
 
 <script>
 /* ---------------- configuration ---------------- */
-const VAPID_PUBLIC_KEY = 'BMBXF0FAO-57gzHhm48x6deXbU4pxyU5ey_hJB9VK03Ck5XoFnGxAgriY6zBqoJZApYfKV9YsM6sx6OXlbV6zgU'; // replace with your public VAPID key (Base64 URL-safe)
+const VAPID_PUBLIC_KEY = 'BMBXF0FAO-57gzHhm48x6deXbU4pxyU5ey_hJB9VK03Ck5XoFnGxAgriY6zBqoJZApYfKV9YsM6sx6OXlbV6zgU';
 const API = window.location.origin;
 const TICKET_STORE_KEY = 'kiosk_current_ticket';
 const SUBSCRIBE_STORE_KEY = 'kiosk_push_subscription';
@@ -653,7 +653,10 @@ cancelBtn.addEventListener('click', async () => {
 function startSSEForKiosk(){
   try {
     const es = new EventSource(apiUrl('/events'));
-    es.addEventListener('open', () => console.log('SSE open'));
+    es.addEventListener('open', () => {
+      console.log('SSE open');
+      if (loadTicket()) updatePositionForTicket();
+    });
     es.addEventListener('error', (e) => console.warn('SSE error', e));
     const handleRaw = (e, type) => {
       let payload = null;
@@ -700,12 +703,9 @@ async function handleEventPayload(payload, type){
       if(idx !== -1) t.service_index = idx;
     }
   } else if (typeof payload.service_index !== 'undefined') {
-    // payload.service_index may be 0-based or 1-based depending on server.
-    // Prefer zero-based if it fits the services array; otherwise treat as 1-based.
     const svcList = Array.isArray(payload.services) ? payload.services : (Array.isArray(t.services) ? t.services : []);
     const rawIndex = Number(payload.service_index);
     let normalized;
-
     if (Number.isFinite(rawIndex)) {
       if (svcList && svcList.length && rawIndex >= 0 && rawIndex < svcList.length) {
         normalized = Math.max(0, Math.floor(rawIndex));
@@ -715,7 +715,6 @@ async function handleEventPayload(payload, type){
         normalized = normalizeIndex(rawIndex, svcList);
       }
     }
-
     if (typeof normalized !== 'undefined') {
       t.service_index = normalized;
       if (Array.isArray(t.services)) t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)];
@@ -724,7 +723,7 @@ async function handleEventPayload(payload, type){
 
   if(payload.status) t.status = payload.status;
   if(typeof t.service_index === 'undefined') t.service_index = 0;
-  if(!t.current_service && Array.isArray(t.services) && t.services.length) t.current_service = t.services[Math.min(t.service_index, t.services.length - 1)];
+  if(!t.current_service && Array.isArray(t.services) && t.services.length) t.current_service = t.services[Math.min(t.service_index||0, (t.services.length-1))];
 
   saveTicket(t);
   setUIForTicket(t);
@@ -792,11 +791,68 @@ async function handleEventPayload(payload, type){
   saveTicket(t); setUIForTicket(t); await updatePositionForTicket();
 }
 
-/* ------------------ position helper (best-effort) ------------------ */
+/* ------------------ position helper (best-effort, server-verified) ------------------ */
 async function updatePositionForTicket(){
   const t = loadTicket();
   if(!t) return;
+
   try {
+    // 1) Try to fetch authoritative ticket record from server.
+    //    If it doesn't exist (404) -> treat as deleted and clear.
+    let serverTicket = null;
+    try {
+      const tr = await fetch(apiUrl(`/ticket/${t.id}`));
+      if (tr.status === 404) {
+        // ticket removed server-side while kiosk was closed
+        showToast('Your ticket was removed by staff.');
+        clearTicket();
+        setUIForTicket(null);
+        return;
+      }
+      if (tr.ok) {
+        serverTicket = await tr.json();
+      } else {
+        // non-ok but not 404: log and continue with local data as fallback
+        console.warn('updatePositionForTicket: /ticket/:id returned', tr.status);
+      }
+    } catch (err) {
+      // network problem when fetching single ticket: continue to queue fallback
+      console.warn('updatePositionForTicket: failed to fetch /ticket/:id', err);
+    }
+
+    // If we got serverTicket, update our local ticket with authoritative fields
+    if (serverTicket) {
+      // copy/normalize fields that matter
+      if (Array.isArray(serverTicket.services)) t.services = serverTicket.services;
+      if (typeof serverTicket.service_index !== 'undefined') {
+        // server may send 0-based or 1-based index; normalizeIndex will handle common cases
+        t.service_index = normalizeIndex(serverTicket.service_index, t.services || []);
+      }
+      // prefer explicit current service if server provided it
+      t.current_service = serverTicket.current_service || serverTicket.called_service || serverTicket.service || t.current_service;
+      // if still missing, derive from services + index
+      if (!t.current_service && Array.isArray(t.services) && t.services.length) {
+        t.service_index = (typeof t.service_index === 'undefined') ? 0 : t.service_index;
+        t.current_service = t.services[Math.min(t.service_index || 0, t.services.length - 1)];
+      }
+      t.status = serverTicket.status || t.status;
+      t.cancel_requested = !!serverTicket.cancel_requested;
+      t.cancel_reason = serverTicket.cancel_reason || t.cancel_reason || null;
+      t.created_at = serverTicket.created_at || t.created_at || null;
+
+      // If server indicates final/served/completed, clear locally too
+      if (t.status === 'served' || t.status === 'completed' || serverTicket.final === true || serverTicket.completed === true) {
+        showToast('Your ticket has been served. Thank you!');
+        clearTicket();
+        setTimeout(()=> setUIForTicket(null), 400);
+        return;
+      }
+
+      saveTicket(t);
+      setUIForTicket(t);
+    }
+
+    // 2) Fetch /queue to compute waiting position (fallback / best-effort)
     const r = await fetch(apiUrl('/queue'));
     if(!r.ok){
       console.warn('updatePositionForTicket: /queue returned', r.status);
@@ -804,9 +860,11 @@ async function updatePositionForTicket(){
     }
     const q = await r.json();
     if(!Array.isArray(q)) return;
+
     const svc = t.current_service || (Array.isArray(t.services) && t.services[0]);
     const ourKey = t.created_at ? new Date(t.created_at).getTime() : (t.id || 0);
     let position = 1;
+
     for(const item of q){
       try {
         let itemServices = Array.isArray(item.services) ? item.services : (typeof item.services === 'string' ? JSON.parse(item.services||'[]') : []);
@@ -819,9 +877,11 @@ async function updatePositionForTicket(){
         if(itemKey <= ourKey) position++;
       } catch(e){}
     }
+
     t._position = position;
     saveTicket(t);
     setUIForTicket(t);
+
   } catch(err){
     console.warn('updatePositionForTicket failed', err);
   }
@@ -845,5 +905,3 @@ async function updatePositionForTicket(){
 </script>
 </body>
 </html>
-
-
