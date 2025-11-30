@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QR Code</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+
+  <style>
+    :root{
+      --bg1: #0f172a;
+      --bg2: #0b1220;
+      --card: rgba(255,255,255,0.04);
+      --accent: #7c5cff;
+      --glass: rgba(255,255,255,0.05);
+      --muted: rgba(255,255,255,0.7);
+    }
+
+    html,body{
+      height:100%;
+      margin:0;
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: linear-gradient(180deg,var(--bg1),var(--bg2));
+      color: #fff;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      box-sizing:border-box;
+    }
+
+    .card{
+      width:100%;
+      max-width:720px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+      border-radius:14px;
+      padding:28px;
+      box-shadow: 0 8px 30px rgba(2,6,23,0.6);
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+
+    header{
+      display:flex;
+      gap:12px;
+      align-items:center;
+      margin-bottom:18px;
+    }
+
+    header h1{
+      font-size:20px;
+      margin:0;
+      letter-spacing:-0.2px;
+    }
+
+    header p{
+      margin:0;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .form-row{
+      display:flex;
+      gap:12px;
+      align-items:stretch;
+      margin-bottom:18px;
+    }
+
+    input[type="text"]{
+      flex:1;
+      padding:12px 14px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,0.06);
+      background:var(--glass);
+      color:#fff;
+      outline:none;
+      font-size:15px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+    }
+
+    input::placeholder{ color: rgba(255,255,255,0.45); }
+
+    button{
+      padding:10px 14px;
+      border-radius:10px;
+      border: none;
+      cursor:pointer;
+      font-weight:600;
+      font-size:14px;
+    }
+
+    .btn-generate{
+      background: linear-gradient(90deg,var(--accent), #ffd100);
+      color: #fff;
+      box-shadow: 0 6px 18px rgba(124,92,255,0.18);
+      min-width:120px;
+    }
+
+    .error{
+      color:#ffb4b4;
+      background: rgba(255,180,180,0.03);
+      padding:8px 10px;
+      border-radius:8px;
+      margin-bottom:12px;
+      font-size:13px;
+      display:none;
+    }
+
+    .qr-area{
+      display:flex;
+      gap:20px;
+      align-items:center;
+      justify-content:flex-start;
+      flex-wrap:wrap;
+      padding-top:6px;
+    }
+
+    .qr-card{
+      background: rgba(0,0,0,0.35);
+      padding:18px;
+      border-radius:12px;
+      display:flex;
+      gap:14px;
+      align-items:center;
+      box-shadow: 0 6px 24px rgba(2,6,23,0.6);
+    }
+
+    canvas{
+      display:block;
+      border-radius:6px;
+      background: #fff;
+    }
+
+    .link-block{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      max-width:380px;
+      word-break:break-all;
+    }
+
+    .generated-link{
+      color:#e6e9ff;
+      font-size:14px;
+      text-decoration:none;
+      padding:8px 10px;
+      border-radius:8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+
+    .actions{
+      display:flex;
+      gap:10px;
+      margin-top:6px;
+      flex-wrap:wrap;
+    }
+
+    .ticket-stub .stub-title{
+      font-size:13px;
+      font-weight:800;
+      color:#546077;
+      text-align:center;
+      margin-bottom:10px;
+    }
+    .ticket-stub .ticket-no{
+      font-size:20px;
+      font-weight:900;
+      letter-spacing:1px;
+      margin-bottom:10px;
+    }
+    .ticket-stub .small{
+      font-size:12px;color:#546077;text-align:center;
+    }
+
+    .btn-another{
+      background: transparent;
+      border:1px dashed rgba(255,255,255,0.06);
+      color:var(--muted);
+      padding:8px 12px;
+      border-radius:8px;
+      width: 100%;
+    }
+
+    @media (max-width:560px){
+      .qr-area{ justify-content:center; }
+      .link-block{ max-width:100%; text-align:center; }
+    }
+
+  </style>
+</head>
+<body>
+  <main class="card" role="main" aria-live="polite">
+    <header>
+      <div>
+        <h1>Kiosk QR</h1>
+        <p>Scan the QR to take a ticket</p>
+      </div>
+    <a href="https://sti.edu" target="_blank" rel="noopener noreferrer" style="margin-left:auto;">
+        <img src="sti-logo.png" style="height:40px; margin-top:8px; margin-left: auto;" />
+    </a>
+    </header>
+    <div id="formContainer">
+      <form id="generateForm" aria-label="QR code generator form">
+        <div class="form-row">
+          <label for="urlInput" class="sr-only" style="display:none">URL</label>
+          <input id="urlInput" type="text" placeholder="Enter full URL (e.g. https://example.com) or just example.com" autocomplete="url" />
+          <button class="btn-generate" type="submit">Generate</button>
+        </div>
+      </form>
+
+      <div id="errorMsg" class="error" role="alert"></div>
+    </div>
+
+    <!-- QR output area (hidden at first) -->
+    <div id="output" style="display:none">
+      <div class="qr-area">
+        <div class="qr-card">
+          <!-- canvas for QRious -->
+          <canvas id="qrCanvas" width="300" height="300" aria-hidden="true"></canvas>
+
+          <div class="link-block">
+            <a id="generatedLink" class="generated-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+
+            <div class="TextBlock">
+            </div>
+            <div class="ticket-stub" aria-hidden="false">
+            <div class="stub-title">Take a Ticket</div>
+            <div class="small" id="stub-small">Scan this QR code to create a ticket</div>
+
+            <div class="actions">
+              <button id="anotherBtn" class="btn btn-another">Generate another</button>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    (function(){
+      const formContainer = document.getElementById('formContainer');
+      const form = document.getElementById('generateForm');
+      const input = document.getElementById('urlInput');
+      const errorMsg = document.getElementById('errorMsg');
+      const output = document.getElementById('output');
+      const canvas = document.getElementById('qrCanvas');
+      const generatedLink = document.getElementById('generatedLink');
+      const downloadBtn = document.getElementById('downloadBtn');
+      const anotherBtn = document.getElementById('anotherBtn');
+
+      function showError(msg){
+        errorMsg.textContent = msg;
+        errorMsg.style.display = 'block';
+        setTimeout(()=> {
+          errorMsg.style.opacity = '1';
+        }, 10);
+      }
+      function hideError(){
+        errorMsg.style.display = 'none';
+        errorMsg.textContent = '';
+      }
+
+      // Try to normalize the URL: if scheme missing, add https://
+      function normalizeUrl(raw){
+        raw = raw.trim();
+        if(!raw) return null;
+        // If it looks like a mailto or tel or data skip
+        if (/^(mailto:|tel:|data:)/i.test(raw)) return raw;
+        try {
+          // If it's already absolute, URL constructor will succeed
+          new URL(raw);
+          return raw;
+        } catch (e) {
+          // Try adding https://
+          try {
+            const withProto = 'https://' + raw;
+            new URL(withProto);
+            return withProto;
+          } catch (e2) {
+            return null;
+          }
+        }
+      }
+
+      form.addEventListener('submit', function(ev){
+        ev.preventDefault();
+        hideError();
+        let raw = input.value || '';
+        const normalized = normalizeUrl(raw);
+
+        if(!normalized){
+          showError('Please enter a valid URL (e.g. example.com or https://example.com).');
+          input.focus();
+          return;
+        }
+        if (formContainer && formContainer.parentNode) {
+          formContainer.parentNode.removeChild(formContainer);
+        }
+
+        // Create the QR on the canvas using QRious
+        const qr = new QRious({
+          element: canvas,
+          value: normalized,
+          size: 300,
+          level: 'H' // high error correction
+        });
+
+        // Show the output area
+        output.style.display = 'block';
+
+        // populate link
+        generatedLink.href = normalized;
+        generatedLink.textContent = normalized;
+
+        // Download button (redundant as it's not needed)
+        // downloadBtn.addEventListener('click', function(){
+        //   try {
+        //     const dataURL = canvas.toDataURL('image/png');
+        //     const a = document.createElement('a');
+        //     a.href = dataURL;
+        //     a.download = 'qr-code.png';
+        //     // for Firefox, need to add to DOM
+        //     document.body.appendChild(a);
+        //     a.click();
+        //     a.remove();
+        //   } catch (e) {
+        //     alert('Unable to generate download. You can right-click the QR and save the image instead.');
+        //   }
+        // });
+
+        anotherBtn.addEventListener('click', function(){
+          window.location.reload();
+        });
+      });
+      input.addEventListener('input', hideError);
+      input.focus();
+    })();
+  </script>
+</body>
+</html>
