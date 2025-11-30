@@ -171,6 +171,7 @@ div[style*="width:320"] button { cursor:pointer; }
 /* actions column styles - make buttons uniform */
 .actions {
   display:flex;
+  width: 110%;
   flex-direction:column;
   gap:6px;
   align-items:flex-end;
