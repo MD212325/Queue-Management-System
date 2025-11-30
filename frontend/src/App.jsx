@@ -152,7 +152,7 @@ function DraggableServiceList({ services, selected = [], onChange }) {
   );
 }
 
-function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, onCallNext, onClearCancel }) {
+function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, onCallNext, onClearCancel, onViewCancel }) {
   const prepared = tickets.map(t => {
     let services = [];
     try { services = Array.isArray(t.services) ? t.services : JSON.parse(t.services || '[]'); } catch(e) { services = []; }
@@ -183,7 +183,8 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
         }}>
           <div style={{fontSize:56, fontWeight:700, lineHeight:1, cursor: called.cancel_requested ? 'pointer' : 'default'}}
                onClick={() => {
-                 if (called.cancel_requested) alert('Cancel request reason:\n\n' + (called.cancel_reason || '(no reason provided)'));
+                 if (called.cancel_requested && onViewCancel) onViewCancel(called);
+                 else if (called.cancel_requested) alert('Cancel request reason:\n\n' + (called.cancel_reason || '(no reason provided)'));
                }}>
             {called.displayToken}
           </div>
@@ -194,6 +195,9 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
             {called.cancel_requested ? (
               <div style={{marginTop:8, color:'#ffb3b3', fontWeight:700}}>
                 Cancel requested — reason: {called.cancel_reason || '(no reason)'}
+                <div style={{marginTop:8}}>
+                  <button onClick={() => onClearCancel && onClearCancel(called.id)} style={{marginRight:6}}>Clear Cancel Request</button>
+                </div>
               </div>
             ) : null}
 
@@ -201,9 +205,6 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
               <button onClick={() => onServe && onServe(called.id, service)} style={{marginRight:6}}>Serve</button>
               <button onClick={() => onHold && onHold(called.id)} style={{marginRight:6}}>Hold</button>
               <button onClick={() => onDelete && onDelete(called.id)} className="delete" style={{marginRight:6}}>Delete</button>
-              {called.cancel_requested ? (
-                <button onClick={() => onClearCancel && onClearCancel(called.id)}>Clear Cancel Request</button>
-              ) : null}
             </div>
           </div>
         </div>
@@ -225,14 +226,17 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
             return (
               <tr key={q.id} style={q.cancel_requested ? { background: 'rgba(255, 100, 100, 0.04)' } : {}}>
                 <td style={{padding:6, cursor: q.cancel_requested ? 'pointer' : 'default'}} onClick={() => {
-                  if(q.cancel_requested) alert('Cancel request reason:\n\n' + (q.cancel_reason || '(no reason provided)'));
+                  if(q.cancel_requested) {
+                    if (onViewCancel) onViewCancel(q);
+                    else alert('Cancel request reason:\n\n' + (q.cancel_reason || '(no reason provided)'));
+                  }
                 }}>{q.displayToken || String(q.id).padStart(3,'0')}</td>
                 <td style={{padding:6}}>{q.name || '—'}</td>
                 <td style={{padding:6}}>{q.quer_type || '—'}</td>
                 <td style={{padding:6}}>
                   {q.status === 'called' ? `Called (${q.called_service})` : q.status}
                   <div style={{fontSize:9, color:'#cfe6ff'}}>Progress: {Number(q.service_index || 0) + 1}/{(q.services || []).length}</div>
-                  {q.cancel_requested ? <div style={{color:'#ffb3b3', fontSize:12, marginTop:6}}>Cancel requested</div> : null}
+                  {q.cancel_requested ? <button onClick={() => onViewCancel && onViewCancel(q)} style={{paddingTop:1,fontSize:10}}>Request</button> : null}
                 </td>
                 <td style={{padding:6}}>
                   <div className="actions">
@@ -246,7 +250,6 @@ function ServiceTable({ service, tickets, onServe, onHold, onRecall, onDelete, o
                     <button onClick={() => onHold && onHold(q.id)}>Hold</button>
                     {q.status === 'hold' ? <button onClick={() => onRecall && onRecall(q.id)}>Recall</button> : null}
                     <button className="delete" onClick={() => onDelete && onDelete(q.id)}>Delete</button>
-                    {q.cancel_requested ? <button onClick={() => onClearCancel && onClearCancel(q.id)}>Clear Cancel</button> : null}
                   </div>
                 </td>
               </tr>
@@ -311,6 +314,9 @@ export default function App(){
   const [staffKey, setStaffKey] = useState(localStorage.getItem('staff_key') || '');
   const [staffRole, setStaffRole] = useState(localStorage.getItem('staff_role') || 'All');
 
+  // Cancel modal state
+  const [cancelModal, setCancelModal] = useState({ open: false, ticket: null });
+
   useEffect(() => {
     fetchQueue(); fetchStats();
     const es = new EventSource(`${API}/events`);
@@ -318,6 +324,11 @@ export default function App(){
       es.addEventListener(evt, () => { fetchQueue(); fetchStats(); })
     );
     es.onerror = (e) => console.warn('SSE error', e);
+    es.addEventListener('open', () => {
+      // when SSE reconnects, refresh immediately
+      fetchQueue();
+      fetchStats();
+    });
     return () => es.close();
   }, []);
 
@@ -465,7 +476,19 @@ export default function App(){
       const data = await safeJson(res);
       if (!res.ok) { alert('Clear cancel request failed: ' + (data.error || data.text || res.statusText)); return; }
       fetchQueue(); fetchStats();
+      // close modal if it refers to this ticket
+      setCancelModal(prev => (prev.ticket && prev.ticket.id === id) ? { open:false, ticket:null } : prev);
     } catch (err) { console.error('clearCancel error', err); alert('Network error'); }
+  }
+
+  // open cancel modal
+  function openCancelModal(ticket) {
+    if (!ticket) return;
+    // ensure we attach full ticket object as shown in queue
+    setCancelModal({ open: true, ticket });
+  }
+  function closeCancelModal() {
+    setCancelModal({ open: false, ticket: null });
   }
 
   // Determine which service cards to show based on staffRole
@@ -521,10 +544,35 @@ export default function App(){
               onDelete={deleteTicket}
               onCallNext={callNext}
               onClearCancel={clearCancel}
+              onViewCancel={openCancelModal}
             />
           ))}
         </div>
       </div>
+
+      {/* Cancel Request Modal */}
+      {cancelModal.open && cancelModal.ticket ? (
+        <div style={{
+          position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center',
+          background:'rgba(0,0,0,0.45)', zIndex:9999
+        }}>
+          <div style={{width:480, maxWidth:'92%', background:'#fff', borderRadius:8, padding:18, boxShadow:'0 10px 30px rgba(0,0,0,0.2)'}}>
+            <h3 style={{marginTop:0}}>Cancel Request</h3>
+            <div style={{marginBottom:12, fontSize:14}}>
+              <strong>Token:</strong> {String(cancelModal.ticket.id).padStart(3,'0')} &nbsp; &nbsp;
+              <strong>Service:</strong> {cancelModal.ticket.current_service || (cancelModal.ticket.services && cancelModal.ticket.services[0])}
+            </div>
+            <div style={{background:'#f7f7f7', padding:12, borderRadius:6, marginBottom:12, whiteSpace:'pre-wrap'}}>
+              {cancelModal.ticket.cancel_reason || '(no reason provided)'}
+            </div>
+
+            <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+              <button onClick={closeCancelModal}>Close</button>
+              <button onClick={() => { if (!confirm('Clear cancel request?')) return; clearCancel(cancelModal.ticket.id); }} style={{background:'#c9302c', color:'#fff'}}>Clear Cancel Request</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {!staffKey && <LoginOverlay onLogin={onLogin} />}
     </div>
