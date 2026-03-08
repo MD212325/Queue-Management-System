@@ -41,7 +41,6 @@ http://localhost:5173
 The production files will be in the `dist/` folder.
 
 ---
----
 
 ## Deploying to Another PC
 1. Install [Node.js](https://nodejs.org/) on the target PC.  
@@ -56,8 +55,6 @@ The production files will be in the `dist/` folder.
    npm run dev
    ```
 4. Open the URL shown in the terminal (usually `http://localhost:5173`).
-
----
 
 
 
