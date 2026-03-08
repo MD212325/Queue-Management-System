@@ -3,17 +3,7 @@
 A simple queuing system with a **ticket generator**, a **queue display**, and a **kiosk for quers**.  
 Built with **Vite + React** (frontend) and a lightweight backend (HTML/JS/CSS).  
 
----
-
-## 🚀 Features
-- Take a ticket from the counter.
-- Display live queue numbers on the display screen.
-- Supports multiple counters.
-- Clean responsive UI (optimized for big screens).
-
----
-
-## 🖥️ Installation
+## Installation
 
 ### 1. Clone the Repository
 ```bash
@@ -51,22 +41,9 @@ http://localhost:5173
 The production files will be in the `dist/` folder.
 
 ---
-
-## 📂 Project Structure
-```
-queue-display-system/
-├── display.html       # Main display screen
-├── display.css        # Styling for display
-├── kiosk.html         # Main kiosk screen for quers
-├── src/               # React source files
-├── public/            # Static assets
-├── package.json       # Dependencies & scripts
-└── README.md          # Documentation
-```
-
 ---
 
-## ⚡ Deploying to Another PC
+## Deploying to Another PC
 1. Install [Node.js](https://nodejs.org/) on the target PC.  
 2. Clone this repository:
    ```bash
@@ -82,12 +59,8 @@ queue-display-system/
 
 ---
 
-## 🛠️ Tech Stack
-- **Frontend**: React + Vite
-- **Styling**: CSS
-- **Backend/Logic**: JavaScript (Node.js)
+
 
 ---
 
-## 📜 License
 MIT License — free to use and modify.
