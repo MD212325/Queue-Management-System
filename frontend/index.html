@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b2545" />
+    <title>STI Queue Console</title>
+    <script>
+      // Apply the saved theme before first paint so there is no light/dark flash.
+      try { document.documentElement.dataset.theme = localStorage.getItem('qms_theme') || 'light' } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

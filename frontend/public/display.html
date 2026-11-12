@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Now serving · STI Tanay</title>
+<link rel="icon" href="/favicon.ico" />
+<style>
+  :root{
+    --bg:#071a30; --panel:#0e2742; --panel-2:#12325a; --line:#1f4270; --ink:#f2f6fc; --ink-2:#a9bdd8;
+    --yellow:#fdf200; --blue:#5aa2ff;
+    --font-num:"Bahnschrift","DIN Alternate","Avenir Next Condensed","Roboto Condensed","Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font:400 18px/1.4 "Segoe UI",system-ui,-apple-system,Arial,sans-serif;display:flex;flex-direction:column}
+  header{display:flex;align-items:center;gap:20px;padding:22px 36px;border-bottom:1px solid var(--line)}
+  header img{height:54px;border-radius:8px}
+  header h1{margin:0;font:600 clamp(28px,3.2vw,46px)/1 var(--font-num);letter-spacing:.01em}
+  header p{margin:4px 0 0;color:var(--ink-2);font-size:clamp(14px,1.3vw,20px)}
+  .clock{margin-left:auto;font:600 clamp(26px,3vw,44px)/1 var(--font-num);color:var(--ink-2);font-variant-numeric:tabular-nums}
+  .live{width:12px;height:12px;border-radius:50%;background:#35c79f;margin-left:10px;display:inline-block}
+  .live.off{background:#f3a850}
+  main{flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px;padding:28px 36px;align-content:start}
+  .col{background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden;display:flex;flex-direction:column}
+  .col-head{display:flex;align-items:center;gap:14px;padding:16px 20px;background:var(--panel-2)}
+  .badge{display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--yellow);color:#0b2545;font:700 26px var(--font-num)}
+  .col-head h2{margin:0;font:600 clamp(22px,2vw,30px)/1.1 var(--font-num)}
+  .serving{padding:22px 20px 18px;text-align:center;min-height:190px;display:flex;flex-direction:column;justify-content:center;gap:4px}
+  .serving small{color:var(--ink-2);font-size:16px;letter-spacing:.02em}
+  .token{font:700 clamp(64px,7vw,108px)/1 var(--font-num);color:var(--yellow);letter-spacing:.02em}
+  .token.none{color:#38567c}
+  .who{color:var(--ink-2);min-height:1.4em}
+  .serving.flash{animation:flash 1s ease-out 4}
+  @keyframes flash{0%,100%{background:transparent}30%{background:rgba(253,242,0,.22)}}
+  .next{padding:14px 20px 20px;border-top:1px solid var(--line)}
+  .next h3{margin:0 0 10px;font-size:15px;font-weight:600;color:var(--ink-2)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{padding:5px 12px;border-radius:10px;background:#0a1f38;border:1px solid var(--line);font:600 clamp(18px,1.6vw,24px) var(--font-num);font-variant-numeric:tabular-nums}
+  .chip.first{border-color:var(--blue);color:var(--blue)}
+  .more{align-self:center;color:var(--ink-2)}
+  .empty{color:#6e8bb0}
+  @media (prefers-reduced-motion:reduce){.serving.flash{animation:none}}
+</style>
+</head>
+<body>
+<header>
+  <img src="/sti-logo.png" alt="STI" />
+  <div><h1>Now serving</h1><p>Please go to the counter shown when your number is called.</p></div>
+  <div class="clock"><span id="clock"></span><i id="live" class="live off" title="Connection"></i></div>
+</header>
+<main id="board" aria-live="polite"></main>
+
+<script>
+const API = window.location.origin;
+const SHOW_MAX = 6;                       // how many waiting numbers to list per counter
+let services = [];
+let lastCalled = {};
+let firstRender = true;
+
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+
+async function loadServices() {
+  try {
+    const r = await fetch(API + '/services');
+    if (r.ok) services = await r.json();
+  } catch (e) { console.warn('services', e); }
+}
+
+async function loadQueue() {
+  try {
+    const r = await fetch(API + '/queue');
+    if (!r.ok) throw new Error('queue ' + r.status);
+    render(await r.json());
+    live(true);
+  } catch (e) { console.warn('queue', e); live(false); }
+}
+
+function render(tickets) {
+  const board = document.getElementById('board');
+  board.replaceChildren();
+  // A service switched off by the administrator still needs a column while customers are waiting there.
+  const known = new Set(services.map(s => s.key));
+  const orphans = [...new Set(tickets.map(t => t.current_service).filter(k => k && !known.has(k)))]
+    .map(k => ({ key: k, label: k.charAt(0).toUpperCase() + k.slice(1), prefix: k.charAt(0).toUpperCase() }));
+  [...services, ...orphans].forEach(svc => {
+    const serving = tickets.find(t => t.status === 'called' && t.called_service === svc.key);
+    const waiting = tickets.filter(t => t.status === 'waiting' && t.current_service === svc.key)
+      .sort((a, b) => (a.position || 0) - (b.position || 0));
+
+    const col = el('section', 'col');
+    const head = el('div', 'col-head');
+    head.append(el('span', 'badge', svc.prefix), el('h2', '', svc.label));
+    col.append(head);
+
+    const box = el('div', 'serving');
+    box.append(el('small', '', 'NOW SERVING'));
+    box.append(el('div', serving ? 'token' : 'token none', serving ? serving.displayToken : '—'));
+    box.append(el('div', 'who', serving && serving.name ? serving.name : ''));
+    const key = serving ? serving.id + ':' + serving.called_at : '';
+    if (!firstRender && serving && lastCalled[svc.key] !== key) box.classList.add('flash');
+    lastCalled[svc.key] = key;
+    col.append(box);
+
+    const next = el('div', 'next');
+    next.append(el('h3', '', waiting.length ? 'Next in line' : 'No one waiting'));
+    if (waiting.length) {
+      const chips = el('div', 'chips');
+      waiting.slice(0, SHOW_MAX).forEach((t, i) => chips.append(el('span', i === 0 ? 'chip first' : 'chip', t.displayToken)));
+      if (waiting.length > SHOW_MAX) chips.append(el('span', 'more', '+' + (waiting.length - SHOW_MAX) + ' more'));
+      next.append(chips);
+    }
+    col.append(next);
+    board.append(col);
+  });
+  firstRender = false;
+}
+
+function live(ok) { document.getElementById('live').classList.toggle('off', !ok); }
+function tickClock() { document.getElementById('clock').textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+
+// One refresh per burst of events, instead of one full download per event.
+let timer = null;
+const refresh = () => { clearTimeout(timer); timer = setTimeout(loadQueue, 150); };
+
+(async function start() {
+  tickClock(); setInterval(tickClock, 15000);
+  await loadServices();
+  await loadQueue();
+  const es = new EventSource(API + '/events');
+  ['created', 'called', 'served', 'moved', 'reassigned', 'deleted', 'hold', 'recalled', 'cancel_requested', 'cancel_cleared']
+    .forEach(evt => es.addEventListener(evt, refresh));
+  es.addEventListener('services_updated', async () => { await loadServices(); refresh(); });
+  es.onopen = () => { live(true); refresh(); };
+  es.onerror = () => live(false);
+  setInterval(loadQueue, 30000);            // safety net if the live connection quietly drops
+})();
+</script>
+</body>
+</html>
