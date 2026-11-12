@@ -14,10 +14,7 @@ Built with Node.js + Express + SQLite on the server and React (Vite) for the adm
 Requires [Node.js](https://nodejs.org/) 20 or newer (22 recommended).
 
 ```bash
-npm install                      # server
-cp .env.example .env             # then edit .env: set STAFF_KEY (and ideally ADMIN_KEY)
-cd frontend && npm install && npm run build && cd ..
-npm start
+run start.bat or start.sh
 ```
 
 Open `http://localhost:4000` and sign in with your staff key. Customers use `http://<this-pc-address>:4000/kiosk.html`.
