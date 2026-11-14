@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QR poster</title>
+  <link rel="icon" href="/img/favicon.ico" />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/qr.css" />
+</head>
+<body>
+  <div class="page">
+    <section class="panel no-print" aria-label="Poster settings">
+      <h1>QR poster</h1>
+      <p class="lead">Print this poster for the lobby. Customers scan it with their phone camera to get a queue number.</p>
+
+      <fieldset class="group">
+        <legend>Address phones will open</legend>
+        <div id="options" class="options"><p class="muted">Looking for this computer's network address…</p></div>
+        <label class="field" id="custom-wrap" hidden>
+          <span>Address</span>
+          <input id="custom" type="url" inputmode="url" placeholder="https://queue.myschool.edu" autocomplete="off" />
+        </label>
+        <p id="advice" class="advice" role="status"></p>
+      </fieldset>
+
+      <label class="field">
+        <span>Poster heading</span>
+        <input id="heading" type="text" maxlength="60" value="Get your queue number" />
+      </label>
+
+      <div class="actions">
+        <button id="print" class="btn btn-yellow" type="button"></button>
+        <button id="png" class="btn" type="button"></button>
+        <button id="svg" class="btn" type="button"></button>
+        <button id="copy" class="btn" type="button"></button>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="stage" aria-label="Poster preview">
+      <article class="poster" id="poster"></article>
+    </section>
+  </div>
+  <script type="module" src="/js/qr/main.js"></script>
+</body>
+</html>

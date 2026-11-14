@@ -1,0 +1,69 @@
+/* Public display for a TV or monitor. Always dark, sized in viewport units so it reads from across a room. */
+:root {
+  --bg: #071a30; --panel: #0e2742; --panel-2: #12325a; --line: #1f4270; --ink: #f2f6fc; --ink-2: #a9bdd8;
+  --yellow: #fdf200; --blue: #5aa2ff; --green: #3ccaa3;
+  --font-num: "Bahnschrift", "DIN Alternate", "Avenir Next Condensed", "Roboto Condensed", "Segoe UI", system-ui, sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font: 400 clamp(15px, 1.25vw, 22px)/1.4 "Segoe UI", system-ui, -apple-system, Arial, sans-serif; overflow: hidden; }
+body.idle { cursor: none; }
+h1, p { margin: 0; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; }
+
+header { display: flex; align-items: center; gap: 1.6vw; padding: 1.6vh 2.4vw; border-bottom: 1px solid var(--line); }
+header img { height: 7vh; min-height: 40px; width: auto; border-radius: 8px; }
+.title h1 { font: 600 clamp(28px, 3.4vw, 64px)/1 var(--font-num); letter-spacing: .01em; }
+.title p { margin-top: .4vh; color: var(--ink-2); font-size: clamp(14px, 1.3vw, 24px); }
+.tools { margin-left: auto; display: flex; align-items: center; gap: 1.2vw; }
+.tool { display: inline-flex; align-items: center; gap: .6em; padding: .55em 1em; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-weight: 600; }
+.tool:hover { background: var(--panel-2); }
+.tool[aria-pressed="true"] { border-color: var(--green); color: var(--green); }
+.tool .icon { width: 1.3em; height: 1.3em; }
+.clock { font: 600 clamp(26px, 3vw, 56px)/1 var(--font-num); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.live { width: .9vw; min-width: 10px; aspect-ratio: 1; border-radius: 50%; background: var(--green); }
+.live.off { background: #f3a850; }
+body.idle .tool { opacity: 0; }
+
+main { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(clamp(240px, 22vw, 440px), 1fr)); gap: 1.6vw; padding: 2.4vh 2.4vw; align-content: stretch; grid-auto-rows: minmax(0, 1fr); overflow: hidden; }
+.col { container-type: inline-size; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 1.4vw; overflow: hidden; min-width: 0; }
+.col-head { display: flex; align-items: center; gap: 1vw; padding: 1.4vh 1.4vw; background: var(--panel-2); }
+.badge { display: grid; place-items: center; width: 3.4vw; min-width: 40px; aspect-ratio: 1; border-radius: .9vw; background: var(--yellow); color: #0b2545; font: 700 clamp(20px, 2vw, 38px) var(--font-num); }
+.col-head h2 { margin: 0; font: 600 clamp(20px, 2vw, 38px)/1.1 var(--font-num); }
+.serving { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: .4vh; min-height: 22vh; padding: 2vh 1vw; text-align: center; }
+.serving small { color: var(--ink-2); font-size: clamp(12px, 1.05vw, 20px); letter-spacing: .08em; }
+.token { font: 700 clamp(60px, 7vw, 150px)/1 var(--font-num); color: var(--yellow); letter-spacing: .02em; white-space: nowrap; }
+/* Where supported, size the number to its own card so it always fits, whatever the number of counters. */
+@supports (font-size: 1cqw) { .token { font-size: clamp(48px, 25cqw, 190px); } }
+.token.none { color: #38567c; }
+.who { color: var(--ink-2); min-height: 1.4em; }
+.serving.flash { animation: flash 1s ease-out 5; }
+@keyframes flash { 0%, 100% { background: transparent; } 35% { background: rgba(253, 242, 0, .24); } }
+.next { flex: none; min-height: 24vh; padding: 1.4vh 1.4vw 2vh; border-top: 1px solid var(--line); }
+.next h3 { margin: 0 0 1vh; font-size: clamp(13px, 1.05vw, 20px); font-weight: 600; color: var(--ink-2); }
+.chips { display: flex; flex-wrap: wrap; gap: .6vw; }
+.chip { padding: .15em .6em; border-radius: .6vw; background: #0a1f38; border: 1px solid var(--line); font: 600 clamp(18px, 1.7vw, 32px) var(--font-num); font-variant-numeric: tabular-nums; }
+.chip.first { border-color: var(--blue); color: var(--blue); }
+.more { align-self: center; color: var(--ink-2); }
+.empty { padding: 8vh 2vw; color: var(--ink-2); text-align: center; grid-column: 1 / -1; font-size: clamp(18px, 2vw, 36px); }
+
+footer { display: flex; align-items: center; gap: 1.4vw; padding: 1.4vh 2.4vw; border-top: 1px solid var(--line); background: #06162a; overflow: hidden; }
+footer strong { flex: none; color: var(--ink-2); font-size: clamp(13px, 1.1vw, 20px); font-weight: 600; }
+footer ul { display: flex; gap: 1vw; list-style: none; margin: 0; padding: 0; min-width: 0; }
+footer li { flex: none; display: flex; align-items: baseline; gap: .5em; padding: .2em .8em; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; }
+footer li b { font: 700 clamp(18px, 1.7vw, 32px) var(--font-num); color: var(--yellow); }
+footer li span { color: var(--ink-2); font-size: clamp(13px, 1.1vw, 20px); }
+
+@media (prefers-reduced-motion: reduce) { .serving.flash { animation: none; background: rgba(253, 242, 0, .18); } }
+
+/* Small screens (a phone used to check the board): let the header wrap instead of scrolling sideways. */
+@media (max-width: 720px) {
+  header { flex-wrap: wrap; gap: 10px 14px; }
+  .tools { margin-left: 0; width: 100%; justify-content: space-between; gap: 10px; }
+  .tool { padding: .4em .8em; }
+  main { padding: 14px; gap: 12px; overflow-y: auto; grid-auto-rows: auto; align-content: start; }
+  .col { border-radius: 14px; }
+  .next { min-height: 0; }
+  .badge { border-radius: 10px; }
+}
