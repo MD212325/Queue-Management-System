@@ -46,11 +46,17 @@ const ICONS = {
   volume: [['path', { d: 'M4 9.5v5h3.5L13 19V5L7.5 9.5Z' }], ['path', { d: 'M16.5 9a4 4 0 0 1 0 6M18.8 6.5a7.5 7.5 0 0 1 0 11' }]],
   volumeOff: [['path', { d: 'M4 9.5v5h3.5L13 19V5L7.5 9.5Z' }], ['path', { d: 'm16 9 5 6M21 9l-5 6' }]],
   expand: [['path', { d: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5' }]],
+  sun: [['circle', { cx: 12, cy: 12, r: 4 }], ['path', { d: 'M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4' }]],
+  moon: [['path', { d: 'M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10Z' }]],
+  star: [['path', { d: 'm12 3.8 2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8Z' }]],
+  grip: [['circle', { cx: 9, cy: 6, r: 1.2 }], ['circle', { cx: 15, cy: 6, r: 1.2 }], ['circle', { cx: 9, cy: 12, r: 1.2 }], ['circle', { cx: 15, cy: 12, r: 1.2 }], ['circle', { cx: 9, cy: 18, r: 1.2 }], ['circle', { cx: 15, cy: 18, r: 1.2 }]],
+  coffee: [['path', { d: 'M5 9h11v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4Z' }], ['path', { d: 'M16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3.5v2M12 3.5v2' }]],
 };
 
-export function icon(name, size = 20) {
+export function icon(name, size = 20, { filled = false } = {}) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   for (const [k, v] of Object.entries({ width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.9, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', focusable: 'false' })) svg.setAttribute(k, v);
+  if (filled) svg.setAttribute('fill', 'currentColor');
   svg.classList.add('icon');
   for (const [tag, attrs] of ICONS[name] || []) {
     const el = document.createElementNS(SVG_NS, tag);

@@ -52,7 +52,7 @@ function createQueue({ db, bus, push, cfg }) {
 
   async function refreshServices() {
     const rows = await db.all('SELECT * FROM services ORDER BY sort_order, key');
-    services = new Map(rows.map(r => [r.key, { ...r, enabled: !!r.enabled }]));
+    services = new Map(rows.map(r => [r.key, { ...r, enabled: !!r.enabled, paused: !!r.paused }]));
     avgCache.clear();
   }
   const serviceList = ({ includeDisabled = false } = {}) =>
@@ -158,7 +158,8 @@ function createQueue({ db, bus, push, cfg }) {
     }
     const metrics = new Map();
     for (const [svc, list] of waiting) {
-      list.sort((a, b) => String(a.service_arrival || a.created_at).localeCompare(String(b.service_arrival || b.created_at)) || a.id - b.id);
+      list.sort((a, b) => (b.priority || 0) - (a.priority || 0)
+        || String(a.service_arrival || a.created_at).localeCompare(String(b.service_arrival || b.created_at)) || a.id - b.id);
       const avg = await avgSeconds(svc);
       const busy = called.get(svc);
       const head = busy ? remainingOf(busy) : 0;
@@ -182,6 +183,7 @@ function createQueue({ db, bus, push, cfg }) {
       service_index: idx,
       current_service: current,
       status: row.status,
+      priority: !!row.priority,
       called_service: row.called_service || '',
       cancel_requested: !!row.cancel_requested,
       cancel_reason: row.cancel_reason || '',
@@ -229,23 +231,31 @@ function createQueue({ db, bus, push, cfg }) {
   /** What a customer needs to choose a service: people waiting and the wait a NEW arrival would face. */
   async function serviceStatus() {
     const rows = await db.all(
-      `SELECT status, current_service, called_service, called_at, allotted_seconds, extended_seconds
+      `SELECT status, priority, current_service, called_service, called_at, allotted_seconds, extended_seconds
        FROM tickets WHERE status IN ('waiting','called')`);
     const waiting = new Map();
+    const urgent = new Map();
     const serving = new Map();
     for (const r of rows) {
-      if (r.status === 'waiting') waiting.set(r.current_service, (waiting.get(r.current_service) || 0) + 1);
-      else serving.set(r.called_service, r);
+      if (r.status === 'waiting') {
+        waiting.set(r.current_service, (waiting.get(r.current_service) || 0) + 1);
+        if (r.priority) urgent.set(r.current_service, (urgent.get(r.current_service) || 0) + 1);
+      } else serving.set(r.called_service, r);
     }
     const out = [];
     for (const s of serviceList()) {
       const w = waiting.get(s.key) || 0;
       const current = serving.get(s.key);
       const avg = await avgSeconds(s.key);
+      const head = current ? remainingOf(current) : 0;
+      const pw = urgent.get(s.key) || 0;
       out.push({
         key: s.key, label: s.label, prefix: s.prefix, allotted_seconds: s.allotted_seconds,
         waiting: w, serving: !!current, avg_seconds: avg,
-        eta_seconds: (current ? remainingOf(current) : 0) + w * avg,
+        eta_seconds: head + w * avg,
+        // someone with priority only waits behind other priority tickets
+        priority_waiting: pw, priority_eta_seconds: head + pw * avg,
+        paused: s.paused, pause_note: s.pause_note || '',
       });
     }
     return out;
@@ -263,7 +273,7 @@ function createQueue({ db, bus, push, cfg }) {
 
   async function snapshot() {
     const [tickets, st] = await Promise.all([listActive({ names: true }), stats()]);
-    return { now: iso(), services: serviceList({ includeDisabled: true }), tickets, stats: st };
+    return { now: iso(), services: serviceList({ includeDisabled: true }), tickets, stats: st, settings: getSettings(), announcement: currentAnnouncement() };
   }
 
   async function historyToday(limit = 200) {
@@ -279,25 +289,28 @@ function createQueue({ db, bus, push, cfg }) {
     return String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
   }
 
-  async function createTicket({ name, services: wanted, quer_type }, { staff = false } = {}) {
+  async function createTicket({ name, services: wanted, quer_type, priority }, { staff = false } = {}) {
     if (!Array.isArray(wanted) || wanted.length === 0) throw new HttpError(400, 'Select at least one service.');
     const route = [...new Set(wanted.map(String))];
     if (route.length > 8) throw new HttpError(400, 'Too many services selected.');
     for (const key of route) {
       const svc = services.get(key);
       if (!svc || !svc.enabled) throw new HttpError(400, `Service not available: ${key}`);
+      if (svc.paused && !staff) throw new HttpError(400, `${svc.label} is closed right now${svc.pause_note ? `: ${svc.pause_note}` : ''}.`);
     }
+    const urgent = priority === true || priority === 1 || priority === '1' || priority === 'true';
+    if (urgent && !staff && !settings.prioritySelfService) throw new HttpError(400, 'Priority numbers are given out by staff. Please ask at the counter.');
     const now = iso();
     const secret = crypto.randomBytes(9).toString('base64url');
     const id = await db.write(async tx => {
       const r = await tx.run(
         `INSERT INTO tickets (name, services, quer_type, status, service_index, current_service, extended_seconds,
-                              created_at, updated_at, service_arrival, secret)
-         VALUES (?, ?, ?, 'waiting', 0, ?, 0, ?, ?, ?, ?)`,
-        [cleanText(name, 80), JSON.stringify(route), cleanText(quer_type, 40), route[0], now, now, now, secret]);
+                              created_at, updated_at, service_arrival, secret, priority)
+         VALUES (?, ?, ?, 'waiting', 0, ?, 0, ?, ?, ?, ?, ?)`,
+        [cleanText(name, 80), JSON.stringify(route), cleanText(quer_type, 40), route[0], now, now, now, secret, urgent ? 1 : 0]);
       return r.lastID;
     });
-    bus.emit('created', { id, token: pad3(id), services: route, status: 'waiting', service_index: 0, current_service: route[0], created_at: now });
+    bus.emit('created', { id, token: pad3(id), services: route, status: 'waiting', service_index: 0, current_service: route[0], created_at: now, priority: urgent });
     return ticketView(id, { names: staff, secret: true });
   }
 
@@ -332,6 +345,7 @@ function createQueue({ db, bus, push, cfg }) {
   async function callNext(service) {
     const svc = services.get(service);
     if (!svc) throw new HttpError(400, 'Unknown service');
+    if (svc.paused) throw new HttpError(409, 'This counter is paused. Resume it before calling the next ticket.', { paused: true });
     const row = await db.write(async tx => {
       const now = iso();
       // One atomic statement: pick the oldest waiting ticket for this service AND make sure the
@@ -340,7 +354,7 @@ function createQueue({ db, bus, push, cfg }) {
         `UPDATE tickets
             SET status = 'called', called_service = ?, called_at = ?, allotted_seconds = ?, extended_seconds = 0, updated_at = ?
           WHERE id = (SELECT id FROM tickets WHERE status = 'waiting' AND current_service = ?
-                      ORDER BY COALESCE(service_arrival, created_at), id LIMIT 1)
+                      ORDER BY priority DESC, COALESCE(service_arrival, created_at), id LIMIT 1)
             AND NOT EXISTS (SELECT 1 FROM tickets WHERE status = 'called' AND called_service = ?)
         RETURNING *`, [service, now, svc.allotted_seconds, now, service, service]);
       if (rows.length) return rows[0];
@@ -431,6 +445,7 @@ function createQueue({ db, bus, push, cfg }) {
   async function callSpecific(tx, id, service) {
     const svc = services.get(service);
     if (!svc) throw new HttpError(400, 'Unknown service');
+    if (svc.paused) throw new HttpError(409, 'That counter is paused. Resume it first.', { paused: true });
     const busy = await tx.get(`SELECT id FROM tickets WHERE status = 'called' AND called_service = ? AND id <> ?`, [service, id]);
     if (busy) throw new HttpError(409, 'That counter is still serving a ticket. Complete or hold it first.', { current_id: busy.id });
     const now = iso();
@@ -440,17 +455,115 @@ function createQueue({ db, bus, push, cfg }) {
     return rows[0];
   }
 
-  async function recall(id) {
+  /** Put an existing ticket at its counter right now (out of turn), with a fresh timer. */
+  async function callExisting(id, allowed, refusal) {
     const row = await db.write(async tx => {
       const t = await tx.get('SELECT * FROM tickets WHERE id = ?', [id]);
       if (!t) throw new HttpError(404, 'ticket not found');
-      if (t.status !== 'hold') throw new HttpError(400, 'Only tickets on hold can be recalled');
+      if (!allowed.includes(t.status)) throw new HttpError(400, refusal);
       const current = t.current_service || parseServices(t.services)[t.service_index || 0];
       if (!current) throw new HttpError(400, 'Ticket has no current service');
       return callSpecific(tx, id, current);
     });
     bus.emit('recalled', { id, service: row.called_service, at: row.called_at });
     announceCalled(row);
+    return { ok: true };
+  }
+  const recall = id => callExisting(id, ['hold'], 'Only tickets on hold can be recalled');
+  const callTicket = id => callExisting(id, ['waiting', 'hold'], 'Only a waiting or held ticket can be called');
+
+  /* ------------------ priority, announcements, breaks, settings ------------------ */
+
+  let settings = { autoAnnounce: true, prioritySelfService: true };
+  const SETTING_KEYS = { autoAnnounce: 'auto_announce', prioritySelfService: 'priority_self_service' };
+  async function loadSettings() {
+    const stored = new Map((await db.all('SELECT key, value FROM settings')).map(r => [r.key, r.value]));
+    settings = { autoAnnounce: stored.get('auto_announce') !== '0', prioritySelfService: stored.get('priority_self_service') !== '0' };
+  }
+  const getSettings = () => ({ ...settings });
+  async function updateSettings(patch) {
+    const keys = Object.keys(patch || {}).filter(k => k in SETTING_KEYS && typeof patch[k] === 'boolean');
+    if (!keys.length) throw new HttpError(400, 'Nothing to update');
+    await db.write(async tx => {
+      for (const k of keys) {
+        await tx.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [SETTING_KEYS[k], patch[k] ? '1' : '0']);
+      }
+    });
+    await loadSettings();
+    bus.emit('settings_updated', getSettings());
+    return getSettings();
+  }
+  async function init() { await refreshServices(); await loadSettings(); }
+
+  async function setPriority(id, value) {
+    const flag = value ? 1 : 0;
+    await db.write(async tx => {
+      const t = await tx.get('SELECT status FROM tickets WHERE id = ?', [id]);
+      if (!t) throw new HttpError(404, 'ticket not found');
+      if (!['waiting', 'hold'].includes(t.status)) throw new HttpError(400, 'Priority can only be changed while a ticket is waiting');
+      await tx.run('UPDATE tickets SET priority = ?, updated_at = ? WHERE id = ?', [flag, iso(), id]);
+    });
+    bus.emit('priority_changed', { id, priority: !!flag });
+    return { ok: true, priority: !!flag };
+  }
+
+  /** Call out a ticket that is already at the counter again (the customer did not hear, or is slow to arrive). */
+  async function announceTicket(id) {
+    const row = await getTicketRow(id);
+    if (row.status !== 'called') throw new HttpError(400, 'Only a ticket that is at the counter can be announced');
+    const svc = services.get(row.called_service) || {};
+    const token = displayToken(row.id, row.called_service);
+    const payload = { kind: 'ticket', id: row.id, displayToken: token, service: row.called_service, label: svc.label || row.called_service, at: iso() };
+    bus.emit('announce', payload);
+    push.sendForTicket(row.id, {
+      title: `Token ${token} is being called`, body: `Please proceed to ${payload.label}`, type: 'called',
+      tag: `ticket-${row.id}`, data: { id: row.id, service: row.called_service },
+    });
+    return { ok: true };
+  }
+
+  // A message for the public display (and phones): "Registrar closes at noon". Kept in memory; it is meant to be short-lived.
+  let announcement = null;
+  let announcementSeq = 0;
+  const announcementView = a => ({ id: a.id, text: a.text, speak: a.speak, until: new Date(a.until).toISOString(), seconds_left: Math.max(0, Math.round((a.until - Date.now()) / 1000)) });
+  function currentAnnouncement() { return announcement && announcement.until > Date.now() ? announcementView(announcement) : null; }
+  function announceMessage({ text, seconds, speak }) {
+    const clean = cleanText(text, 200);
+    if (!clean) throw new HttpError(400, 'Type the announcement first.');
+    const secs = Math.min(300, Math.max(5, Math.round(Number(seconds) || 20)));
+    announcement = { id: `${Date.now()}-${++announcementSeq}`, text: clean, speak: speak !== false, until: Date.now() + secs * 1000 };
+    const view = announcementView(announcement);
+    bus.emit('announcement', view);
+    return view;
+  }
+  function clearAnnouncement() {
+    announcement = null;
+    bus.emit('announcement', { cleared: true });
+    return { ok: true };
+  }
+
+  /** A counter on a break: no new tickets are taken for it and nobody can be called until it is resumed. */
+  async function pauseService(key, paused, note = '') {
+    if (!services.has(key)) throw new HttpError(404, 'Service not found');
+    const flag = paused ? 1 : 0;
+    await db.write(tx => tx.run('UPDATE services SET paused = ?, pause_note = ? WHERE key = ?', [flag, flag ? cleanText(note, 80) : '', key]));
+    await refreshServices();
+    bus.emit('services_updated', {});
+    return services.get(key);
+  }
+
+  async function submitFeedback(id, { rating, comment, secret }, { staff = false } = {}) {
+    const stars = Math.round(Number(rating));
+    if (!Number.isFinite(stars) || stars < 1 || stars > 5) throw new HttpError(400, 'Please choose 1 to 5 stars.');
+    const text = cleanText(comment, 300);
+    await db.write(async tx => {
+      const t = await tx.get('SELECT * FROM tickets WHERE id = ?', [id]);
+      if (!t) throw new HttpError(404, 'not found');
+      if (t.status !== 'served') throw new HttpError(400, 'You can rate a visit once it is finished.');
+      if (!staff && t.secret && String(secret || '') !== t.secret) throw new HttpError(403, 'Not allowed to rate this ticket');
+      if (await tx.get('SELECT 1 AS x FROM feedback WHERE ticket_id = ?', [id])) throw new HttpError(409, 'Thank you, this visit has already been rated.');
+      await tx.run('INSERT INTO feedback (ticket_id, rating, comment, services, created_at) VALUES (?,?,?,?,?)', [id, stars, text, t.services, iso()]);
+    });
     return { ok: true };
   }
 
@@ -593,8 +706,18 @@ function createQueue({ db, bus, push, cfg }) {
     const daily = await db.all(
       `SELECT strftime('%Y-%m-%d', ended_at, 'localtime') AS day, COUNT(*) AS n
        FROM service_log WHERE ended_at >= ? AND actual_seconds >= ? GROUP BY day ORDER BY day`, [since, MIN_COUNTED_SECONDS]);
+    const fb = await db.all('SELECT rating, comment, created_at FROM feedback WHERE created_at >= ? ORDER BY id DESC', [since]);
+    const spread = [0, 0, 0, 0, 0];
+    let stars = 0;
+    for (const f of fb) { spread[f.rating - 1]++; stars += f.rating; }
     return {
       range, since,
+      feedback: {
+        count: fb.length,
+        average: fb.length ? Math.round((stars / fb.length) * 10) / 10 : null,
+        distribution: spread,
+        recent: fb.filter(f => f.comment).slice(0, 8).map(f => ({ rating: f.rating, comment: f.comment, at: f.created_at })),
+      },
       totals: {
         visits: total.visits,
         tickets_completed: Number(completed.n || 0),
@@ -609,6 +732,10 @@ function createQueue({ db, bus, push, cfg }) {
   }
 
   async function exportCsv(type = 'tickets') {
+    if (type === 'feedback') {
+      const rows = await db.all('SELECT * FROM feedback ORDER BY id');
+      return 'id,ticket_id,rating,comment,services,created_at\n' + rows.map(r => [r.id, r.ticket_id, r.rating, r.comment, r.services, r.created_at].map(csvCell).join(',')).join('\n');
+    }
     if (type === 'stages') {
       const rows = await db.all('SELECT * FROM service_log ORDER BY id');
       const head = 'id,ticket_id,service,stage_index,arrived_at,called_at,ended_at,allotted_seconds,extended_seconds,actual_seconds,wait_seconds,outcome\n';
@@ -627,12 +754,14 @@ function createQueue({ db, bus, push, cfg }) {
     return db.write(async tx => {
       const t = await tx.run(`DELETE FROM tickets WHERE status = 'served' AND served_at < ?`, [cutoff]);
       const s = await tx.run('DELETE FROM subscriptions WHERE ticket_id IS NOT NULL AND ticket_id NOT IN (SELECT id FROM tickets)');
-      return { tickets_removed: t.changes, subscriptions_removed: s.changes, cutoff };
+      // Free-text comments can contain personal details, so they expire with the ticket. The star rating is kept.
+      const f = await tx.run("UPDATE feedback SET comment = '' WHERE created_at < ? AND comment <> ''", [cutoff]);
+      return { tickets_removed: t.changes, subscriptions_removed: s.changes, comments_cleared: f.changes, cutoff };
     });
   }
 
   return {
-    init: refreshServices,
+    init, getSettings, updateSettings, setPriority, callTicket, announceTicket, announceMessage, clearAnnouncement, currentAnnouncement, pauseService, submitFeedback,
     serviceList, serviceStatus, refreshServices, createService, updateService,
     listActive, ticketView, stats, snapshot, historyToday,
     createTicket, callNext, serve, hold, recall, reassign, extend,

@@ -171,6 +171,28 @@ const MIGRATIONS = [
     // The old code replaced status with 'cancel_requested', losing the real state. Treat those as waiting.
     await db.exec(`UPDATE tickets SET status = 'waiting' WHERE status = 'cancel_requested'`);
   },
+
+  // v3: priority tickets, pausing a counter, settings, customer feedback.
+  async db => {
+    await addColumn(db, 'tickets', 'priority', 'INTEGER NOT NULL DEFAULT 0');
+    await addColumn(db, 'services', 'paused', 'INTEGER NOT NULL DEFAULT 0');
+    await addColumn(db, 'services', 'pause_note', "TEXT NOT NULL DEFAULT ''");
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id INTEGER NOT NULL UNIQUE,
+        rating INTEGER NOT NULL,
+        comment TEXT NOT NULL DEFAULT '',
+        services TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback (created_at);
+      -- the order the queue is read in: priority first, then who arrived first
+      DROP INDEX IF EXISTS idx_tickets_queue;
+      CREATE INDEX IF NOT EXISTS idx_tickets_line ON tickets (current_service, status, priority DESC, service_arrival, id);
+      INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_announce', '1'), ('priority_self_service', '1');`);
+  },
 ];
 
 async function migrate(db) {

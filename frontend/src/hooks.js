@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, us
 import { api, eventsUrl } from './api.js'
 
 const EVENTS = ['created', 'called', 'moved', 'served', 'hold', 'recalled', 'reassigned', 'extended',
-  'deleted', 'cancel_requested', 'cancel_cleared', 'services_updated']
+  'deleted', 'cancel_requested', 'cancel_cleared', 'services_updated', 'priority_changed', 'announcement', 'settings_updated']
 
 /**
  * Keeps one snapshot of the queue fresh.

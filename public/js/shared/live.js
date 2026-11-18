@@ -2,7 +2,7 @@
 // keeps hundreds of phones from all refreshing in the same instant.
 
 const EVENTS = ['created', 'called', 'served', 'moved', 'reassigned', 'deleted', 'hold', 'recalled',
-  'extended', 'cancel_requested', 'cancel_cleared', 'services_updated'];
+  'extended', 'cancel_requested', 'cancel_cleared', 'services_updated', 'priority_changed', 'announce', 'announcement', 'settings_updated'];
 
 /** onEvent(name, payload); onState('live' | 'offline'). Returns { close() }. */
 export function connectLive(onEvent, onState) {

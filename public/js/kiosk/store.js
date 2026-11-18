@@ -25,3 +25,12 @@ export function clearTicket() { try { localStorage.removeItem(KEY); localStorage
 /** The "it's your turn" screen has been dismissed for this particular call (identified by its timestamp). */
 export const ackedCall = () => read(ACK);
 export const ackCall = calledAt => write(ACK, calledAt);
+
+/** A finished visit that has not been rated yet, so the rating prompt survives a reload (for a few hours). */
+const FB = 'qms.feedback';
+export const savePendingFeedback = v => write(FB, { ...v, at: Date.now() });
+export const clearPendingFeedback = () => { try { localStorage.removeItem(FB); } catch { /* ignore */ } };
+export function loadPendingFeedback() {
+  const v = read(FB);
+  return v && v.id && Date.now() - v.at < 3 * 3600 * 1000 ? v : null;
+}

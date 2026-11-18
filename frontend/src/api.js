@@ -4,7 +4,7 @@
 const BASE = import.meta.env.VITE_API_URL || ''
 const STORE = 'qms_session'
 
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(message, status, data) {
     super(message)
     this.status = status
@@ -62,6 +62,13 @@ export const api = {
   saveService: (key, body) => request('PUT', `/admin/services/${encodeURIComponent(key)}`, body),
   purge: days => request('POST', '/admin/purge', { older_than_days: days }),
   csv: type => request('GET', `/export.csv?type=${type}`),
+  callTicket: id => request('POST', `/call/${id}`),
+  setPriority: (id, priority) => request('POST', `/ticket/${id}/priority`, { priority }),
+  announceTicket: id => request('POST', `/ticket/${id}/announce`),
+  announce: (text, seconds, speak) => request('POST', '/admin/announce', { text, seconds, speak }),
+  clearAnnouncement: () => request('DELETE', '/admin/announce'),
+  pause: (key, paused, note) => request('POST', `/service/${encodeURIComponent(key)}/pause`, { paused, note }),
+  saveSettings: patch => request('PUT', '/admin/settings', patch),
 }
 
 /** Server-sent events do not allow custom headers, so the stream carries no personal data. */

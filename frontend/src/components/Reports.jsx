@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { fmtClock, fmtDuration } from '../utils.js'
-import { Button, Icon, Segmented, useAction } from './ui.jsx'
+import { Button, Icon, Segmented, Stars, useAction } from './ui.jsx'
 
 const RANGES = [
   { value: 'today', label: 'Today' },
@@ -50,6 +50,41 @@ function Bars({ data, labelOf }) {
   )
 }
 
+/** Ratings customers give on their phone after being served. */
+function FeedbackPanel({ fb }) {
+  return (
+    <section className="panel">
+      <header className="panel-head">
+        <h3>Customer feedback</h3>
+        <p className="muted">Customers are asked to rate their visit on their phone after they are served. Comments are deleted with the ticket when old data is cleared.</p>
+      </header>
+      {fb && fb.count ? (
+        <div className="fb">
+          <div className="fb-score">
+            <strong>{fb.average.toFixed(1)}</strong>
+            <Stars value={fb.average} size={22} />
+            <span>{fb.count} rating{fb.count === 1 ? '' : 's'}</span>
+          </div>
+          <div className="fb-bars" aria-label="Ratings breakdown">
+            {[5, 4, 3, 2, 1].map(n => (
+              <div key={n} className="fb-row">
+                <span>{n}<Icon name="star" size={12} filled /></span>
+                <div className="fb-track"><div style={{ width: `${(fb.distribution[n - 1] / fb.count) * 100}%` }} /></div>
+                <span className="fb-n">{fb.distribution[n - 1]}</span>
+              </div>
+            ))}
+          </div>
+          <ul className="fb-comments">
+            {fb.recent.length ? fb.recent.map((c, i) => (
+              <li key={i}><Stars value={c.rating} size={13} /><p>{c.comment}</p></li>
+            )) : <li className="muted">No comments yet.</li>}
+          </ul>
+        </div>
+      ) : <p className="empty-block">No ratings in this period yet.</p>}
+    </section>
+  )
+}
+
 function hourLabel(h) { return h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p` }
 
 function download(name, text) {
@@ -94,6 +129,7 @@ export default function Reports({ refreshKey }) {
         <div className="filters">
           <Button icon="download" size="sm" onClick={() => run(async () => download('visits.csv', await api.csv('stages')))}>Visit timings (CSV)</Button>
           <Button icon="download" size="sm" onClick={() => run(async () => download('tickets.csv', await api.csv('tickets')))}>Tickets (CSV)</Button>
+          <Button icon="download" size="sm" onClick={() => run(async () => download('feedback.csv', await api.csv('feedback')))}>Feedback (CSV)</Button>
         </div>
       </div>
 
@@ -132,6 +168,8 @@ export default function Reports({ refreshKey }) {
         </div>
         <p className="foot-note"><Icon name="alert" size={14} /> Visits shorter than 10 seconds are ignored, since they are usually accidental clicks. A service that regularly runs over may need a longer allotment, or more staff.</p>
       </section>
+
+      <FeedbackPanel fb={data.feedback} />
 
       <section className="panel">
         <header className="panel-head">

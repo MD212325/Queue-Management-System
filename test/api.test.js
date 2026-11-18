@@ -504,7 +504,7 @@ test('customer pages are served, with a strict security policy and correct cachi
   const base = `http://127.0.0.1:${h.srv.port}`;
   try {
     for (const [path, type] of [['/kiosk', /html/], ['/kiosk.html', /html/], ['/display', /html/], ['/display.html', /html/], ['/qr', /html/], ['/qr.html', /html/],
-      ['/sw.js', /javascript/], ['/js/kiosk/main.js', /javascript/], ['/js/qr/qrcode.js', /javascript/], ['/css/base.css', /css/], ['/img/sti-logo-sm.png', /png/], ['/sound/notif.wav', /audio|wav/], ['/', /html/]]) {
+      ['/sw.js', /javascript/], ['/theme-init.js', /javascript/], ['/js/kiosk/main.js', /javascript/], ['/js/shared/sortable.js', /javascript/], ['/js/shared/theme.js', /javascript/], ['/js/qr/qrcode.js', /javascript/], ['/css/base.css', /css/], ['/img/sti-logo-sm.png', /png/], ['/sound/notif.wav', /audio|wav/], ['/', /html/]]) {
       const res = await fetch(base + path);
       assert.equal(res.status, 200, path);
       assert.match(res.headers.get('content-type'), type, path);
@@ -566,6 +566,225 @@ test('customer pages stay offline-friendly: nothing is loaded from outside, no i
   assert.ok(loadsRemote.some(re => re.test('<script src="https://cdnjs.cloudflare.com/x.js"></script>')));
 });
 
+/* ------------------------------ more queue features ------------------------------ */
+
+/** Listen to the live event stream: wait(/regex/) resolves true once that text arrives. */
+async function listen(h) {
+  const ctrl = new AbortController();
+  const res = await fetch(`http://127.0.0.1:${h.srv.port}/events`, { signal: ctrl.signal });
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let seen = '';
+  return {
+    get text() { return seen; },
+    async wait(re, ms = 3000) {
+      const stop = Date.now() + ms;
+      while (!re.test(seen) && Date.now() < stop) {
+        const chunk = await Promise.race([reader.read(), new Promise(r => setTimeout(() => r({}), 150))]);
+        if (chunk && chunk.value) seen += decoder.decode(chunk.value);
+      }
+      return re.test(seen);
+    },
+    payload(name) { const part = seen.split(`event: ${name}\ndata: `).pop(); return JSON.parse(part.split('\n')[0]); },
+    close: () => ctrl.abort(),
+  };
+}
+
+test('priority tickets are called first and the estimate reflects it', async () => {
+  const h = await boot();
+  try {
+    const a = await newTicket(h), b = await newTicket(h);
+    const p = await newTicket(h, ['registrar'], { priority: true });
+    assert.equal(p.priority, true);
+    assert.equal(p.position, 1, 'priority jumps ahead of people already waiting');
+    assert.equal((await h.api('GET', `/ticket/${a.id}`)).body.position, 2);
+    assert.equal((await h.api('GET', `/ticket/${b.id}`)).body.position, 3);
+
+    let svc = (await h.api('GET', '/services')).body.find(x => x.key === 'registrar');
+    assert.equal(svc.priority_waiting, 1);
+    assert.ok(svc.priority_eta_seconds < svc.eta_seconds, 'a priority arrival waits less than anyone else');
+
+    assert.equal((await h.api('POST', '/next', { body: { service: 'registrar' }, token: h.staff })).body.ticket.id, p.id, 'priority is called first');
+
+    // staff can give priority to someone already waiting (a senior citizen who just arrived)
+    assert.equal((await h.api('POST', `/ticket/${b.id}/priority`, { body: { priority: true } })).status, 401);
+    assert.equal((await h.api('POST', `/ticket/${b.id}/priority`, { body: { priority: true }, token: h.staff })).body.priority, true);
+    await h.api('POST', `/serve/${p.id}`, { body: { service: 'registrar' }, token: h.staff });
+    assert.equal((await h.api('POST', '/next', { body: { service: 'registrar' }, token: h.staff })).body.ticket.id, b.id, 'b was later than a but now has priority');
+    assert.equal((await h.api('POST', `/ticket/${b.id}/priority`, { body: { priority: false }, token: h.staff })).status, 400, 'cannot change once at the counter');
+    assert.equal((await h.api('POST', '/ticket/99999/priority', { body: { priority: true }, token: h.staff })).status, 404);
+  } finally { await h.close(); }
+});
+
+test('settings: only an admin can change them, and customers cannot self-declare priority when it is off', async () => {
+  const h = await boot();
+  const ev = await listen(h);
+  try {
+    let c = (await h.api('GET', '/config')).body;
+    assert.deepEqual([c.autoAnnounce, c.prioritySelfService], [true, true], 'both on by default');
+    assert.equal((await h.api('PUT', '/admin/settings', { body: { autoAnnounce: false }, token: h.staff })).status, 403);
+    assert.equal((await h.api('PUT', '/admin/settings', { body: { autoAnnounce: false } })).status, 401);
+    assert.equal((await h.api('PUT', '/admin/settings', { body: { nonsense: 1, autoAnnounce: 'yes' }, token: h.admin })).status, 400, 'only real booleans for real keys');
+
+    const r = await h.api('PUT', '/admin/settings', { body: { autoAnnounce: false, prioritySelfService: false }, token: h.admin });
+    assert.deepEqual(r.body, { autoAnnounce: false, prioritySelfService: false });
+    assert.ok(await ev.wait(/event: settings_updated/), 'screens are told');
+    c = (await h.api('GET', '/config')).body;
+    assert.deepEqual([c.autoAnnounce, c.prioritySelfService], [false, false]);
+
+    assert.equal((await h.api('POST', '/ticket', { body: { services: ['registrar'], priority: true } })).status, 400, 'customers cannot ask for priority now');
+    const byStaff = await h.api('POST', '/ticket', { body: { services: ['registrar'], priority: true }, token: h.staff });
+    assert.equal(byStaff.body.priority, true, 'staff still can');
+    assert.equal((await h.api('GET', '/admin/snapshot', { token: h.staff })).body.settings.autoAnnounce, false, 'the console sees it too');
+  } finally { ev.close(); await h.close(); }
+});
+
+test('call a specific ticket out of turn (and respect a busy counter)', async () => {
+  const h = await boot();
+  try {
+    const a = await newTicket(h), b = await newTicket(h), c = await newTicket(h);
+    assert.equal((await h.api('POST', `/call/${c.id}`, {})).status, 401);
+    assert.equal((await h.api('POST', `/call/${c.id}`, { token: h.staff })).status, 200);
+    let v = (await h.api('GET', `/ticket/${c.id}`)).body;
+    assert.equal(v.status, 'called');
+    assert.equal(v.allotted_seconds, 600, 'gets a normal timer');
+    assert.equal((await h.api('POST', `/call/${b.id}`, { token: h.staff })).status, 409, 'counter is busy');
+    assert.equal((await h.api('GET', `/ticket/${a.id}`)).body.status, 'waiting', 'nobody else was disturbed');
+
+    await h.api('POST', `/hold/${c.id}`, { token: h.staff });
+    assert.equal((await h.api('POST', `/call/${c.id}`, { token: h.staff })).status, 200, 'a held ticket can be called too');
+    await h.api('POST', `/serve/${c.id}`, { body: { service: 'registrar' }, token: h.staff });
+    assert.equal((await h.api('POST', `/call/${c.id}`, { token: h.staff })).status, 400, 'finished tickets cannot be called');
+    assert.equal((await h.api('POST', '/call/99999', { token: h.staff })).status, 404);
+  } finally { await h.close(); }
+});
+
+test('announce again: only for a ticket at the counter, and every screen is told', async () => {
+  const h = await boot();
+  const ev = await listen(h);
+  try {
+    const t = await newTicket(h);
+    assert.equal((await h.api('POST', `/ticket/${t.id}/announce`, { token: h.staff })).status, 400, 'not called yet');
+    await h.api('POST', '/next', { body: { service: 'registrar' }, token: h.staff });
+    assert.equal((await h.api('POST', `/ticket/${t.id}/announce`, {})).status, 401);
+    assert.equal((await h.api('POST', `/ticket/${t.id}/announce`, { token: h.staff })).status, 200);
+    assert.ok(await ev.wait(/event: announce\n/));
+    const p = ev.payload('announce');
+    assert.deepEqual([p.kind, p.id, p.label, p.displayToken], ['ticket', t.id, 'Registrar', `R${String(t.id).padStart(3, '0')}`]);
+    assert.ok(!/Ana/.test(ev.text), 'no name in the broadcast');
+    // the visit's timer is untouched by announcing
+    const before = (await h.api('GET', `/ticket/${t.id}`)).body.called_at;
+    await h.api('POST', `/ticket/${t.id}/announce`, { token: h.staff });
+    assert.equal((await h.api('GET', `/ticket/${t.id}`)).body.called_at, before);
+  } finally { ev.close(); await h.close(); }
+});
+
+test('announcement messages: staff send them, everyone can read the current one, they are cleaned and limited', async () => {
+  const h = await boot();
+  const ev = await listen(h);
+  try {
+    assert.equal((await h.api('POST', '/admin/announce', { body: { text: 'Hi' } })).status, 401);
+    assert.equal((await h.api('POST', '/admin/announce', { body: { text: '   ' }, token: h.staff })).status, 400);
+    assert.equal((await h.api('GET', '/announcement')).body.announcement, null);
+
+    const sent = await h.api('POST', '/admin/announce', { body: { text: 'Registrar closes at noon\u0007', seconds: 30, speak: false }, token: h.staff });
+    assert.equal(sent.status, 200);
+    assert.equal(sent.body.text, 'Registrar closes at noon', 'control characters removed');
+    assert.equal(sent.body.speak, false);
+    assert.ok(sent.body.seconds_left <= 30 && sent.body.seconds_left >= 28);
+    assert.ok(await ev.wait(/event: announcement/));
+    assert.equal((await h.api('GET', '/announcement')).body.announcement.text, 'Registrar closes at noon', 'a screen that loads later still sees it');
+
+    assert.equal((await h.api('POST', '/admin/announce', { body: { text: 'x', seconds: 1 }, token: h.staff })).body.seconds_left <= 5, true, 'at least 5 seconds');
+    assert.ok((await h.api('POST', '/admin/announce', { body: { text: 'x', seconds: 99999 }, token: h.staff })).body.seconds_left <= 300, 'at most 5 minutes');
+    assert.equal((await h.api('POST', '/admin/announce', { body: { text: 'y'.repeat(900) }, token: h.staff })).body.text.length, 200, 'length limited');
+
+    assert.equal((await h.api('DELETE', '/admin/announce', { token: h.staff })).status, 200);
+    assert.equal((await h.api('GET', '/announcement')).body.announcement, null);
+    assert.equal((await h.api('DELETE', '/admin/announce', {})).status, 401);
+  } finally { ev.close(); await h.close(); }
+});
+
+test('pausing a counter: no new tickets, nobody can be called, the visit in progress can finish', async () => {
+  const h = await boot();
+  try {
+    const t = await newTicket(h, ['cashier']);
+    await newTicket(h, ['cashier']);
+    await h.api('POST', '/next', { body: { service: 'cashier' }, token: h.staff }); // t is being served
+
+    assert.equal((await h.api('POST', '/service/cashier/pause', { body: { paused: true, note: 'Lunch' } })).status, 401);
+    assert.equal((await h.api('POST', '/service/ghost/pause', { body: { paused: true }, token: h.staff })).status, 404);
+    const paused = await h.api('POST', '/service/cashier/pause', { body: { paused: true, note: 'Lunch until 1:00 PM' }, token: h.staff });
+    assert.equal(paused.body.paused, true);
+
+    const svc = (await h.api('GET', '/services')).body.find(x => x.key === 'cashier');
+    assert.deepEqual([svc.paused, svc.pause_note], [true, 'Lunch until 1:00 PM']);
+    const refused = await h.api('POST', '/ticket', { body: { services: ['cashier'] } });
+    assert.equal(refused.status, 400);
+    assert.match(refused.body.error, /closed right now: Lunch until 1:00 PM/);
+    assert.equal((await h.api('POST', '/ticket', { body: { services: ['cashier'] }, token: h.staff })).status, 200, 'staff can still add a walk-in');
+
+    assert.equal((await h.api('POST', '/serve/' + t.id, { body: { service: 'cashier' }, token: h.staff })).status, 200, 'the visit in progress can be completed');
+    const blocked = await h.api('POST', '/next', { body: { service: 'cashier' }, token: h.staff });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.body.paused, true);
+
+    const resumed = await h.api('POST', '/service/cashier/pause', { body: { paused: false }, token: h.staff });
+    assert.deepEqual([resumed.body.paused, resumed.body.pause_note], [false, '']);
+    assert.equal((await h.api('POST', '/next', { body: { service: 'cashier' }, token: h.staff })).status, 200);
+    assert.equal((await h.api('POST', '/ticket', { body: { services: ['cashier'] } })).status, 200, 'customers can join again');
+  } finally { await h.close(); }
+});
+
+test('customer feedback: only after the visit, once, with the private code; shows up in reports and the export', async () => {
+  const h = await boot();
+  try {
+    const t = await newTicket(h);
+    assert.equal((await h.api('POST', `/ticket/${t.id}/feedback`, { body: { rating: 5, secret: t.secret } })).status, 400, 'not finished yet');
+    await h.api('POST', '/next', { body: { service: 'registrar' }, token: h.staff });
+    await h.api('POST', `/serve/${t.id}`, { body: { service: 'registrar' }, token: h.staff });
+
+    for (const bad of [0, 6, 'x', null]) assert.equal((await h.api('POST', `/ticket/${t.id}/feedback`, { body: { rating: bad, secret: t.secret } })).status, 400, `rating ${bad}`);
+    assert.equal((await h.api('POST', `/ticket/${t.id}/feedback`, { body: { rating: 5 } })).status, 403, 'no private code');
+    assert.equal((await h.api('POST', `/ticket/${t.id}/feedback`, { body: { rating: 5, secret: 'nope' } })).status, 403);
+    assert.equal((await h.api('POST', `/ticket/${t.id}/feedback`, { body: { rating: 4, comment: 'Fast and friendly', secret: t.secret } })).status, 200);
+    assert.equal((await h.api('POST', `/ticket/${t.id}/feedback`, { body: { rating: 1, secret: t.secret } })).status, 409, 'one rating per visit');
+
+    // a second customer who leaves no comment, and one who types a spreadsheet formula
+    for (const [rating, comment] of [[5, ''], [2, '=HYPERLINK("http://evil")']]) {
+      const u = await newTicket(h);
+      await h.api('POST', '/next', { body: { service: 'registrar' }, token: h.staff });
+      await h.api('POST', `/serve/${u.id}`, { body: { service: 'registrar' }, token: h.staff });
+      assert.equal((await h.api('POST', `/ticket/${u.id}/feedback`, { body: { rating, comment, secret: u.secret } })).status, 200);
+    }
+    const rep = (await h.api('GET', '/admin/reports?range=today', { token: h.admin })).body.feedback;
+    assert.equal(rep.count, 3);
+    assert.equal(rep.average, 3.7);
+    assert.deepEqual(rep.distribution, [0, 1, 0, 1, 1]);
+    assert.equal(rep.recent.length, 2, 'only ratings that came with a comment are listed');
+
+    assert.equal((await h.api('GET', '/export.csv?type=feedback', { token: h.staff })).status, 403);
+    const csv = (await h.api('GET', '/export.csv?type=feedback', { token: h.admin })).text;
+    assert.ok(csv.startsWith('id,ticket_id,rating,comment,services,created_at'));
+    assert.ok(csv.includes(`"'=HYPERLINK(""http://evil"")"`), 'formula neutralised');
+  } finally { await h.close(); }
+});
+
+test('purge keeps the star ratings but wipes free-text comments with the names', async () => {
+  const h = await boot();
+  try {
+    const t = await newTicket(h);
+    await h.api('POST', '/next', { body: { service: 'registrar' }, token: h.staff });
+    await h.api('POST', `/serve/${t.id}`, { body: { service: 'registrar' }, token: h.staff });
+    await h.api('POST', `/ticket/${t.id}/feedback`, { body: { rating: 3, comment: 'Call me on 0917 123 4567', secret: t.secret } });
+    await h.sql('UPDATE feedback SET created_at = ?', [new Date(Date.now() - 40 * 86_400_000).toISOString()]);
+    const r = (await h.api('POST', '/admin/purge', { body: { older_than_days: 30 }, token: h.admin })).body;
+    assert.equal(r.comments_cleared, 1);
+    const [row] = await h.rows('SELECT rating, comment FROM feedback');
+    assert.deepEqual([row.rating, row.comment], [3, '']);
+  } finally { await h.close(); }
+});
+
 /* ------------------------------- upgrade path ------------------------------ */
 
 test('an existing database from the old server upgrades in place', async () => {
@@ -591,6 +810,7 @@ test('an existing database from the old server upgrades in place', async () => {
     assert.equal(a.status, 'called');
     assert.equal(a.allotted_seconds, 600, 'in-progress visit gets its service allotment');
     assert.equal(a.current_service, 'registrar');
+    assert.equal(a.priority, false, 'older tickets are not priority');
     assert.equal(b.status, 'waiting', 'status lost by the old cancel flow is restored');
     assert.equal(c.current_service, 'records');
     // and the upgraded database works

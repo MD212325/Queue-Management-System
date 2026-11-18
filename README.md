@@ -44,20 +44,45 @@ Customer pages in `public/` are served by the Node server as plain files: edit, 
 **QR poster** (`/qr`). Open it on the server PC. It lists the PC's network addresses; pick the Wi-Fi one (a QR code that
 points at `localhost` cannot be opened by phones, and the page warns you). Print the poster, or save it as PNG/SVG.
 
-**Kiosk** (`/kiosk`). Customers choose one or more services, in order, and see the live line and wait for each. They get a
-number, their place in line, an estimated wait, a full-screen alert (with sound and vibration) when called, and can ask to
-cancel. The phone keeps only the ticket number and its private code, and everything shown is read fresh from the server.
-Tickets taken with the old kiosk page are picked up automatically.
+**Kiosk** (`/kiosk`). Customers tick the services they need and **drag them into the order they want to visit them**
+(or use the arrow keys / the arrows in the route summary). They see the live line and wait for each service, get a
+number, their place in line, an estimated wait and a full-screen alert (sound and vibration) when called, can ask to
+cancel, and are asked to rate their visit afterwards. The phone keeps only the ticket number and its private code;
+everything shown is read fresh from the server. Light and dark theme: the button in the header (light is the default).
 
-For a **shared tablet in the lobby**, open `/kiosk?lobby`. It shows a slip with the number for a few seconds, remembers
-nothing, and clears itself between people.
+| Address | What it does |
+|---|---|
+| `/kiosk` | Normal customer page (phones) |
+| `/kiosk?lobby` | Shared lobby tablet: shows a slip, remembers nothing, clears itself between people, **Print my number** button |
+| `/kiosk?lobby&autoprint` | Same, and prints the slip as soon as the number is issued. For a silent receipt printer start Chrome/Edge with `--kiosk-printing` |
+| `/kiosk?theme=dark` | Force a theme (also works on `/display`) |
 
-**Public display** (`/display`). Put it on a TV (double-click for full screen). It shows numbers only, never names. Press
-**Sound** once to hear a chime and a spoken announcement for each call (browsers need one click before they allow sound).
-For an unattended TV, start Chrome/Edge with `--autoplay-policy=no-user-gesture-required` and open `/display?sound`.
+**Public display** (`/display`). Put it on a TV (double-click for full screen). Numbers only, never names. Light theme by
+default, dark one button away (`/display?theme=dark` to make a TV always dark). Priority tickets carry a star; a counter on a
+break says so and why; the last calls are listed at the bottom for people who missed theirs.
+**Announcements** need one click per browser session (browsers block sound until then): press **Announcements** once.
+For an unattended TV start the browser with `--autoplay-policy=no-user-gesture-required` and open `/display?sound`.
 
 Change the school name and the customer type list with `SCHOOL_NAME` and `CUSTOMER_TYPES` in `.env`; replace the logos in
 `public/img/` to rebrand.
+
+## Queue features
+
+- **Priority lane.** The kiosk offers a priority option (senior citizens, persons with a disability, pregnant women). Priority
+  tickets are called before regular ones and are marked with a star for staff. Staff can give or remove priority on any
+  waiting ticket, and an administrator can switch the customer option off (Settings → Customer screens).
+- **Call a specific ticket.** Besides *Call next*, staff can call any waiting or held ticket (the megaphone on its row), for
+  example when the next person is not there. The counter must be free.
+- **Announcements.** *Announce again* on a counter calls the number out again on the display (spoken) and re-alerts the
+  customer's phone. *Announce* (top bar) sends a typed message to the display and every open kiosk page, optionally read aloud.
+  An administrator can turn **automatic announcements** off, so calls appear on the display but are spoken only when staff
+  announce them by hand.
+- **Breaks.** *Pause* a counter (the cup icon) with a reason ("Lunch until 1:00 PM"). Customers cannot take new numbers for
+  it, nobody can be called, and the kiosk and display show the reason. A visit in progress can still be completed. *Resume*
+  reopens it.
+- **Customer feedback.** After being served, customers rate the visit 1 to 5 stars with an optional comment. Reports show the
+  average, the breakdown and recent comments, with a CSV export. Comments are deleted with the old tickets; ratings stay.
+- **Lobby printing.** See `/kiosk?lobby&autoprint` above.
 
 ## Time allotment
 
@@ -78,8 +103,8 @@ A visit keeps the allotment it started with: editing a service's time affects th
 
 | Key | Can do |
 |---|---|
-| `STAFF_KEY` | Call, complete, hold, recall, add time, remove, walk-in tickets, see the line |
-| `ADMIN_KEY` (optional) | Everything above plus services, time allotments, reports, exports, data deletion |
+| `STAFF_KEY` | Call, complete, hold, recall, call a specific ticket, give priority, add time, pause a counter, announce, remove, walk-in tickets, see the line |
+| `ADMIN_KEY` (optional) | Everything above plus services, time allotments, **customer-screen settings (auto-announce, priority lane)**, reports, exports, data deletion |
 
 If `ADMIN_KEY` is empty, `STAFF_KEY` can do everything. Keys are typed into the sign-in page and exchanged for a signed token
 that expires (12 h by default). They are never stored in the browser or included in the JavaScript.
@@ -95,8 +120,8 @@ npm test
 ```
 
 Runs the API test-suite (Node's built-in test runner, no extra packages): sign-in and roles, simultaneous "Call next" clicks,
-the time-allotment rules, estimated waits, reports, privacy, the customer pages' security headers and offline guarantees,
-and upgrading an old database.
+the time-allotment rules, estimated waits, priority, calling out of turn, announcements, breaks, feedback, reports, privacy,
+the customer pages' security headers and offline guarantees, and upgrading an old database.
 
 ## Project layout
 
@@ -109,7 +134,7 @@ src/                   server code
 public/                customer pages, served as-is (no build)
   kiosk.html display.html qr.html sw.js theme-init.js
   css/                 base.css (shared), kiosk.css, display.css, qr.css
-  js/shared/           api, live updates, DOM helpers, formatting (used by all three pages)
+  js/shared/           api, live updates, DOM helpers, theme, drag-and-drop, formatting (used by the pages)
   js/kiosk/            main (controller), views, store, alerts, push
   js/display/          main, announce (chime + speech)
   js/qr/               main, qrcode (the QR generator)

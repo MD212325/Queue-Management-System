@@ -12,7 +12,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 // Without them the dev server simply runs on plain HTTP instead of crashing.
 // (Settings can also live in frontend/.env.local, see .env.example)
 const apiRoutes = ['/ticket', '/queue', '/events', '/subscribe', '/services', '/stats', '/auth', '/admin',
-  '/next', '/serve', '/hold', '/recall', '/reassign', '/push', '/config', '/network-info', '/export.csv', '/health']
+  '/next', '/serve', '/hold', '/recall', '/reassign', '/call', '/service', '/announcement', '/push', '/config', '/network-info', '/export.csv', '/health']
 
 // Every backend route the browser pages call. Keeping this list in one place means the
 // admin panel, kiosk and display all work against the dev server the same way they do in production.

@@ -1,6 +1,6 @@
 // Everything the customer pages say to the server. Same-origin, no credentials: these endpoints are public.
 
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(message, status, data) {
     super(message);
     this.status = status;
@@ -38,6 +38,8 @@ export const api = {
   ticket: id => request('GET', `/ticket/${id}`),
   createTicket: body => request('POST', '/ticket', body),
   cancelTicket: (id, reason, secret) => request('POST', `/ticket/${id}/request_cancel`, { reason, secret }),
+  announcement: () => request('GET', '/announcement'),
+  feedback: (id, body) => request('POST', `/ticket/${id}/feedback`, body),
   pushKey: () => request('GET', '/push/key'),
   subscribe: body => request('POST', '/subscribe', body),
   networkInfo: () => request('GET', '/network-info'),

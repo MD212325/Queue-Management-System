@@ -3,7 +3,7 @@ import { api, session } from './api.js'
 import { ClockContext, useLive, useLocalStorage, useServerNow } from './hooks.js'
 import { fmtDuration, serviceLabel, timerState, waitSeconds } from './utils.js'
 import CounterCard from './components/Counter.jsx'
-import { CancelReviewDialog, NewTicketDialog } from './components/Dialogs.jsx'
+import { AnnounceDialog, CancelReviewDialog, NewTicketDialog, PauseDialog } from './components/Dialogs.jsx'
 import Login from './components/Login.jsx'
 import QueueView from './components/QueueView.jsx'
 import Reports from './components/Reports.jsx'
@@ -83,6 +83,8 @@ function Console({ auth, onSignOut }) {
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme || 'light')
   const [newOpen, setNewOpen] = useState(false)
   const [reviewId, setReviewId] = useState(null)
+  const [pauseFor, setPauseFor] = useState(null)
+  const [announceOpen, setAnnounceOpen] = useState(false)
   const [config, setConfig] = useState({ schoolName: 'STI Tanay', customerTypes: ['Student', 'Faculty', 'Staff', 'Visitor', 'Other'] })
   useEffect(() => { api.config().then(setConfig).catch(() => {}) }, [])
   const inflight = useRef(new Set())
@@ -112,6 +114,15 @@ function Console({ auth, onSignOut }) {
     extend: (t, secs) => guard(`ext:${t.id}`, () => api.extend(t.id, secs), `${secs / 60} min added to ${t.displayToken}`),
     hold: t => guard(`hold:${t.id}`, () => api.hold(t.id), `${t.displayToken} put on hold`),
     recall: t => guard(`recall:${t.id}`, () => api.recall(t.id), `${t.displayToken} called back`),
+    call: t => guard(`call:${t.id}`, () => api.callTicket(t.id), `${t.displayToken} called`),
+    priority: t => guard(`pri:${t.id}`, () => api.setPriority(t.id, !t.priority), t.priority ? `Priority removed from ${t.displayToken}` : `${t.displayToken} now has priority`),
+    announceTicket: t => guard(`ann:${t.id}`, () => api.announceTicket(t.id), `Announcing ${t.displayToken}`),
+    pause: s => setPauseFor(s),
+    doPause: (s, note) => guard(`pause:${s.key}`, () => api.pause(s.key, true, note), `${s.label} is on break`),
+    resume: s => guard(`pause:${s.key}`, () => api.pause(s.key, false), `${s.label} is open again`),
+    sendAnnouncement: (text, seconds, speak) => guard('announce', () => api.announce(text, seconds, speak), 'Announcement sent'),
+    clearAnnouncement: () => guard('announce-clear', () => api.clearAnnouncement(), 'Announcement cleared'),
+    setSettings: patch => guard('settings', () => api.saveSettings(patch), 'Saved'),
     keep: t => guard(`keep:${t.id}`, () => api.clearCancel(t.id), 'Cancel request dismissed'),
     remove: async (t, confirmed) => {
       if (!confirmed) {
@@ -183,6 +194,7 @@ function Console({ auth, onSignOut }) {
               ) : null}
               <span className={`conn ${conn}`} role="status"><i aria-hidden="true" />{conn === 'live' ? 'Live' : conn === 'offline' ? 'Reconnecting…' : 'Connecting…'}</span>
               {snap ? <Clock /> : null}
+              <Button icon="volume" onClick={() => setAnnounceOpen(true)} disabled={!snap}>Announce</Button>
               <Button variant="primary" icon="plus" onClick={() => setNewOpen(true)} disabled={!snap}>New ticket</Button>
             </div>
           </header>
@@ -212,6 +224,8 @@ function Console({ auth, onSignOut }) {
 
       {newOpen && snap ? <NewTicketDialog services={snap.services} types={config.customerTypes} onClose={() => setNewOpen(false)} onCreated={refresh} /> : null}
       {reviewing ? <CancelReviewDialog ticket={reviewing} onClose={() => setReviewId(null)} act={act} /> : null}
+      {pauseFor ? <PauseDialog service={pauseFor} onClose={() => setPauseFor(null)} onConfirm={note => act.doPause(pauseFor, note)} /> : null}
+      {announceOpen && snap ? <AnnounceDialog snap={snap} isAdmin={isAdmin} onClose={() => setAnnounceOpen(false)} act={act} /> : null}
     </ClockContext.Provider>
   )
 }

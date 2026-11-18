@@ -95,6 +95,8 @@ export default function Settings({ snap, refresh, isAdmin }) {
     )
   }
 
+  const saveSetting = patch => run(() => api.saveSettings(patch), 'Saved').then(refresh)
+
   async function move(index, dir) {
     const list = [...snap.services]
     const j = index + dir
@@ -136,6 +138,20 @@ export default function Settings({ snap, refresh, isAdmin }) {
           ))}
         </ul>
         <AddService onAdded={refresh} />
+      </section>
+
+      <section className="panel">
+        <header className="panel-head"><h3>Customer screens</h3><p className="muted">How the kiosk and the public display behave.</p></header>
+        <div className="setting-list">
+          <div className="toggle-row">
+            <Switch checked={snap.settings.autoAnnounce} label="Announce every call on the display" onChange={v => saveSetting({ autoAnnounce: v })} />
+            <span><b>Announce every call on the public display</b><small>A chime and a spoken announcement for each call. Turn off to announce by hand with "Announce again". (The display's own button must also be on.)</small></span>
+          </div>
+          <div className="toggle-row">
+            <Switch checked={snap.settings.prioritySelfService} label="Customers can ask for priority" onChange={v => saveSetting({ prioritySelfService: v })} />
+            <span><b>Let customers choose the priority lane on the kiosk</b><small>For senior citizens, persons with a disability and pregnant women. Staff should check ID at the counter. Turn off and only staff can give priority.</small></span>
+          </div>
+        </div>
       </section>
 
       <section className="panel">

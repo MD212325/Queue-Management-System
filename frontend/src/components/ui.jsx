@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 /* ----------------------------------- icons ----------------------------------- */
 // Hand-drawn 24x24 line icons so the panel needs no icon library (and works offline).
@@ -34,12 +35,17 @@ const P = {
   more: <><circle cx="5.5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="18.5" cy="12" r="1.2" /></>,
   arrowUp: <path d="M12 19V5M6 11l6-6 6 6" />,
   arrowDown: <path d="M12 5v14M6 13l6 6 6-6" />,
+  volume: <><path d="M4 9.5v5h3.5L13 19V5L7.5 9.5Z" /><path d="M16.5 9a4 4 0 0 1 0 6M18.8 6.5a7.5 7.5 0 0 1 0 11" /></>,
+  star: <path d="m12 3.8 2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8Z" />,
+  coffee: <><path d="M5 9h11v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4Z" /><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3.5v2M12 3.5v2" /></>,
+  send: <><path d="m20.5 3.5-17 7 6.5 2.5 2.5 6.5Z" /><path d="m10 13 4.5-4.5" /></>,
+  phone: <><rect x="7" y="3" width="10" height="18" rx="2" /><path d="M11 18h2" /></>,
   shield: <><path d="M12 3.5 5 6v5.5c0 4.2 2.8 7.2 7 9 4.2-1.8 7-4.8 7-9V6Z" /><path d="m9 12 2.2 2.2L15.5 10" /></>,
 }
 
-export function Icon({ name, size = 18, className = '', title }) {
+export function Icon({ name, size = 18, className = '', title, filled = false }) {
   return (
-    <svg className={`icon ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    <svg className={`icon ${className}`} width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor"
       strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden={title ? undefined : true} role={title ? 'img' : undefined}>
       {title ? <title>{title}</title> : null}
       {P[name] || null}
@@ -85,6 +91,73 @@ export function Segmented({ value, onChange, options, label }) {
         </button>
       ))}
     </div>
+  )
+}
+
+/* ------------------------------------ menu ------------------------------------ */
+
+/**
+ * A small "more actions" menu. The list is drawn in a portal with fixed positioning, so it is never clipped by the
+ * rounded, overflow-hidden counter cards. items: [{ label, icon, onClick, tone, disabled }]
+ */
+export function Menu({ label, items }) {
+  const [at, setAt] = useState(null)
+  const button = useRef(null)
+  const list = useRef(null)
+  const openedAt = useRef(0)
+  const close = useCallback(() => setAt(null), [])
+
+  useEffect(() => {
+    if (!at) return undefined
+    const onDown = e => { if (!list.current?.contains(e.target) && !button.current?.contains(e.target)) close() }
+    const onKey = e => { if (e.key === 'Escape') { close(); button.current?.focus() } }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    // A scroll that is already under way when the menu opens (the browser scrolling the button into view) must not close it.
+    const onScroll = () => { if (Date.now() - openedAt.current > 300) close() }
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', close)
+    list.current?.querySelector('button:not(:disabled)')?.focus()
+    return () => {
+      document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', close)
+    }
+  }, [at, close])
+
+  function toggle() {
+    if (at) { close(); return }
+    openedAt.current = Date.now()
+    const r = button.current.getBoundingClientRect()
+    const up = r.bottom + items.length * 42 + 16 > window.innerHeight // not enough room below: open upwards
+    setAt({ right: Math.max(8, window.innerWidth - r.right), top: up ? undefined : r.bottom + 4, bottom: up ? window.innerHeight - r.top + 4 : undefined })
+  }
+
+  return (
+    <>
+      <button ref={button} type="button" className="icon-btn" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={!!at} onClick={toggle}>
+        <Icon name="more" size={16} />
+      </button>
+      {at ? createPortal(
+        <ul ref={list} role="menu" className="menu-list" style={at}>
+          {items.map(it => (
+            <li key={it.label} role="none">
+              <button type="button" role="menuitem" className={it.tone || ''} disabled={it.disabled} onClick={() => { close(); it.onClick() }}>
+                {it.icon ? <Icon name={it.icon} size={16} /> : null}<span>{it.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>, document.body) : null}
+    </>
+  )
+}
+
+/** Read-only star rating (rounded to the nearest half is not needed: whole stars are enough for a summary). */
+export function Stars({ value, size = 18 }) {
+  const full = Math.round(value || 0)
+  return (
+    <span className="stars-row" role="img" aria-label={`${value || 0} out of 5 stars`}>
+      {[1, 2, 3, 4, 5].map(n => <Icon key={n} name="star" size={size} filled={n <= full} className={n <= full ? 'on' : ''} />)}
+    </span>
   )
 }
 

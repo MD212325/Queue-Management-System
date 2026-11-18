@@ -18,7 +18,8 @@ function createRouter({ cfg, auth, queue, bus, push }) {
   r.get('/events', (req, res) => bus.handler(req, res));
 
   r.get('/services', async (_req, res) => res.json(await queue.serviceStatus()));
-  r.get('/config', (_req, res) => res.json({ schoolName: cfg.schoolName, customerTypes: cfg.customerTypes, showNames: cfg.publicShowNames }));
+  r.get('/config', (_req, res) => res.json({ schoolName: cfg.schoolName, customerTypes: cfg.customerTypes, showNames: cfg.publicShowNames, ...queue.getSettings() }));
+  r.get('/announcement', (_req, res) => res.json({ announcement: queue.currentAnnouncement() }));
   // Used by the QR poster page so staff can pick an address phones can actually reach (not "localhost").
   r.get('/network-info', (_req, res) => res.json({ addresses: lanAddresses() }));
 
@@ -37,6 +38,7 @@ function createRouter({ cfg, auth, queue, bus, push }) {
   });
 
   r.post('/subscribe', async (req, res) => res.json(await queue.subscribe(req.body || {})));
+  r.post('/ticket/:id/feedback', async (req, res) => res.json(await queue.submitFeedback(idParam(req), req.body || {}, { staff: isStaff(req) })));
 
   /* -------------------------------- auth -------------------------------- */
   r.post('/auth/login', (req, res) => res.json(auth.login(req, res)));
@@ -54,6 +56,12 @@ function createRouter({ cfg, auth, queue, bus, push }) {
   r.post('/serve/:id', staff, async (req, res) => res.json(await queue.serve(idParam(req), req.body && req.body.service ? String(req.body.service) : null)));
   r.post('/hold/:id', staff, async (req, res) => res.json(await queue.hold(idParam(req))));
   r.post('/recall/:id', staff, async (req, res) => res.json(await queue.recall(idParam(req))));
+  r.post('/call/:id', staff, async (req, res) => res.json(await queue.callTicket(idParam(req))));
+  r.post('/ticket/:id/priority', staff, async (req, res) => res.json(await queue.setPriority(idParam(req), !!(req.body && req.body.priority))));
+  r.post('/ticket/:id/announce', staff, async (req, res) => res.json(await queue.announceTicket(idParam(req))));
+  r.post('/admin/announce', staff, (req, res) => res.json(queue.announceMessage(req.body || {})));
+  r.delete('/admin/announce', staff, (_req, res) => res.json(queue.clearAnnouncement()));
+  r.post('/service/:key/pause', staff, async (req, res) => res.json(await queue.pauseService(String(req.params.key), !!(req.body && req.body.paused), req.body && req.body.note)));
   r.post('/reassign/:id', staff, async (req, res) => res.json(await queue.reassign(idParam(req), req.body && req.body.service ? String(req.body.service) : null)));
   r.post('/ticket/:id/extend', staff, async (req, res) => res.json(await queue.extend(idParam(req), req.body && req.body.seconds)));
   r.post('/ticket/:id/clear_cancel', staff, async (req, res) => res.json(await queue.clearCancel(idParam(req))));
@@ -66,9 +74,10 @@ function createRouter({ cfg, auth, queue, bus, push }) {
     const range = ['today', '7d', '30d'].includes(req.query.range) ? req.query.range : 'today';
     res.json(await queue.reports(range));
   });
+  r.put('/admin/settings', admin, async (req, res) => res.json(await queue.updateSettings(req.body || {})));
   r.post('/admin/purge', admin, async (req, res) => res.json(await queue.purge(req.body && req.body.older_than_days)));
   r.get('/export.csv', admin, async (req, res) => {
-    const type = req.query.type === 'stages' ? 'stages' : 'tickets';
+    const type = ['stages', 'feedback'].includes(req.query.type) ? req.query.type : 'tickets';
     res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${type}.csv"` });
     res.send(await queue.exportCsv(type));
   });

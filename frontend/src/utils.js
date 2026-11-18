@@ -1,6 +1,6 @@
 // Small pure helpers shared by the panel. Kept free of React so they are easy to reason about.
 
-export const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n))
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n))
 
 /** 125 -> "02:05", 3725 -> "1:02:05". Never negative: pass Math.abs() for overtime. */
 export function fmtClock(totalSeconds) {
@@ -59,6 +59,5 @@ export const STATUS_LABEL = {
   served: 'Completed',
 }
 
-export const initials = name => (name || '').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase()
 
 export const serviceLabel = (services, key) => (services.find(s => s.key === key) || {}).label || key

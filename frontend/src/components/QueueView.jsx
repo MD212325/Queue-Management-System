@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
 import { useServerNow } from '../hooks.js'
 import { fmtClock, fmtDuration, fmtEta, serviceLabel, STATUS_LABEL, timerState } from '../utils.js'
-import { Elapsed } from './Counter.jsx'
+import { Elapsed, PriorityMark } from './Counter.jsx'
 import { Button, Icon, IconButton, Segmented } from './ui.jsx'
 
 function TimeCell({ ticket }) {
@@ -24,6 +24,10 @@ function TimeCell({ ticket }) {
 }
 
 function ActiveTable({ tickets, services, act, onReview }) {
+  // Why a ticket cannot be called right now (shown as the tooltip on its Call button).
+  const paused = new Set(services.filter(s => s.paused).map(s => s.key))
+  const busy = new Set(tickets.filter(t => t.status === 'called').map(t => t.called_service))
+  const block = t => (paused.has(t.current_service) ? 'counter is on break' : busy.has(t.current_service) ? 'counter is busy' : '')
   if (!tickets.length) return <p className="empty-block">No tickets match. Adjust the filters, or wait for new arrivals.</p>
   return (
     <div className="table-wrap">
@@ -35,7 +39,7 @@ function ActiveTable({ tickets, services, act, onReview }) {
           {tickets.map(t => (
             <tr key={t.id} className={t.cancel_requested ? 'flag' : ''}>
               <td><span className="tok">{t.displayToken}</span></td>
-              <td><b>{t.name || 'Walk-in'}</b><small className="block">{t.quer_type || '–'}</small></td>
+              <td><b><PriorityMark ticket={t} />{t.name || 'Walk-in'}</b><small className="block">{[t.priority ? 'Priority' : '', t.quer_type || '–'].filter(Boolean).join(' · ')}</small></td>
               <td>
                 <span className="route">
                   {t.services.map((k, i) => (
@@ -50,8 +54,12 @@ function ActiveTable({ tickets, services, act, onReview }) {
               <td><TimeCell ticket={t} /></td>
               <td className="right">
                 <div className="row-actions">
-                  {t.status === 'hold' ? <Button size="sm" icon="play" onClick={() => act.recall(t)}>Recall</Button> : null}
-                  {t.status !== 'hold' ? <IconButton icon="pause" label={`Hold ${t.displayToken}`} onClick={() => act.hold(t)} /> : null}
+                  {t.status === 'waiting' ? <Button size="sm" icon="megaphone" disabled={!!block(t)} title={block(t) ? `Cannot call: ${block(t)}` : 'Call this ticket now'} onClick={() => act.call(t)}>Call</Button> : null}
+                  {t.status === 'hold' ? <Button size="sm" icon="play" disabled={!!block(t)} title={block(t) ? `Cannot recall: ${block(t)}` : 'Call this ticket back'} onClick={() => act.recall(t)}>Recall</Button> : null}
+                  {t.status === 'called' ? <IconButton icon="volume" label={`Announce ${t.displayToken} again`} onClick={() => act.announceTicket(t)} /> : null}
+                  {t.status !== 'called' ? <IconButton icon="star" label={t.priority ? `Remove priority from ${t.displayToken}` : `Give ${t.displayToken} priority`} onClick={() => act.priority(t)} /> : null}
+                  {t.status === 'waiting' ? <IconButton icon="pause" label={`Hold ${t.displayToken}`} onClick={() => act.hold(t)} /> : null}
+                  {t.status === 'called' ? <IconButton icon="pause" label={`Hold ${t.displayToken}`} onClick={() => act.hold(t)} /> : null}
                   <IconButton icon="trash" tone="danger" label={`Remove ${t.displayToken}`} onClick={() => act.remove(t)} />
                 </div>
               </td>

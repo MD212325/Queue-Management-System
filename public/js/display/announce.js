@@ -1,4 +1,5 @@
 // Sound for the public display: a two-note chime and a spoken announcement.
+// (Whether calls are announced automatically is decided by staff; this module only plays sound when asked.)
 // Browsers only allow sound after someone has clicked the page, so this stays off until the
 // "Sound" button is pressed once. (A kiosk-mode browser started with
 // --autoplay-policy=no-user-gesture-required can use  /display.html?sound  to start with sound on.)
@@ -6,8 +7,6 @@ import { spell } from '../shared/format.js';
 
 let ctx = null;
 let enabled = false;
-let loopTimer = null;
-let loopText = '';
 
 export const isEnabled = () => enabled;
 export const supported = () => !!(window.AudioContext || window.webkitAudioContext);
@@ -22,12 +21,7 @@ export async function enable() {
   if (enabled) chime(); // let the person hear that it works
   return enabled;
 }
-export function disable() {
-  enabled = false;
-  if (loopTimer) { clearInterval(loopTimer); loopTimer = null; }
-  loopText = '';
-  try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch { /* ignore */ }
-}
+export function disable() { enabled = false; try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch { /* ignore */ } }
 
 /** Try to turn sound on without a click (works only when the browser allows autoplay). */
 export async function tryEnable() {
@@ -59,7 +53,6 @@ function chime() {
 function speak(text) {
   const synth = window.speechSynthesis;
   if (!synth) return;
-  synth.cancel();
   const u = new SpeechSynthesisUtterance(text);
   const voices = synth.getVoices();
   u.voice = voices.find(v => /^en[-_]PH/i.test(v.lang)) || voices.find(v => /^en/i.test(v.lang)) || null;
@@ -67,29 +60,16 @@ function speak(text) {
   synth.speak(u);
 }
 
-function playAnnouncement(text) {
-  if (!enabled || !text) return;
-  chime();
-  setTimeout(() => {
-    if (!enabled) return;
-    speak(text);
-  }, 900);
-}
-
-/** Chime, then read "Ticket R 0 3 7, please proceed to Registrar." and keep repeating while sound stays on. */
+/** Chime, then read "Ticket R 0 3 7, please proceed to Registrar." */
 export function announce(token, where) {
   if (!enabled) return;
-  const text = `Ticket ${spell(token)}, please proceed to ${where}.`;
-  loopText = text;
-  if (loopTimer) clearInterval(loopTimer);
-  playAnnouncement(text);
-  loopTimer = setInterval(() => {
-    if (!enabled) {
-      clearInterval(loopTimer);
-      loopTimer = null;
-      loopText = '';
-      return;
-    }
-    playAnnouncement(loopText);
-  }, 8000);
+  chime();
+  setTimeout(() => speak(`Ticket ${spell(token)}, please proceed to ${where}.`), 900);
+}
+
+/** Chime, then read a free-text message typed by staff. */
+export function say(text) {
+  if (!enabled) return;
+  chime();
+  setTimeout(() => speak(text), 900);
 }

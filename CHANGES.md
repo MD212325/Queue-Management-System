@@ -1,6 +1,43 @@
 # What changed, and what to do now
 
-This file has two rounds: **Round 2** (customer pages and structure) first, then **Round 1** (admin console, time allotment, server).
+Three rounds, newest first: **Round 3** (features, drag, themes, announcements), **Round 2** (customer pages and structure),
+**Round 1** (admin console, time allotment, server).
+
+---
+
+# Round 3: drag, themes, announcements and queue features
+
+## Do these now
+1. Rebuild the admin console (`start.bat rebuild`, or `cd frontend && npm run build`) and restart the server. The database upgrades itself (a new schema version adds priority, breaks, settings and feedback; copy `queue.db` first if you like).
+2. Run `npm test` (34 tests).
+
+## What you asked for
+- **Kiosk drag.** Service cards have a grip handle: drag with a mouse or a finger, or press the arrow keys on the grip. The route summary is draggable too, and the arrow buttons remain. Tapping and dragging both work on touch screens (the page does not scroll while you drag).
+- **Kiosk themes.** Light and dark, with a button in the header; the choice is remembered. **Light is the default**, even on a phone set to dark. Your message was cut off after "where the light theme", so I read it as "light by default": tell me if you meant something else.
+- **Display themes.** Redesigned with a proper light theme (white cards, STI-blue headers, navy numbers) and a refined dark one, a toggle button, and `?theme=` to pin a TV. Light is the default.
+- **Display announcements.** A local **Announcements** toggle on the display. Staff control the rest from the admin console: an administrator can turn *automatic announcements* off (calls are then shown but not spoken), and staff can **announce a ticket again** or **send a message** (banner on the display and phones, optionally read aloud). Staff can also **call any specific ticket**, not only the next one.
+
+## Features I added (what a queue system usually has)
+| Feature | Why |
+|---|---|
+| **Priority lane** (kiosk option, staff can grant/remove, administrator can switch customer option off) | Senior citizens, PWD and pregnant customers are normally served first. Priority tickets are called first and starred. |
+| **Pause a counter (break)** with a reason | Lunch and meetings: stops new tickets and calls for that counter and tells customers why, instead of a silent empty window. |
+| **Customer feedback** (1-5 stars + comment) with reports and CSV | The usual way to learn whether the queue works for people. Comments are purged with the old tickets; ratings stay. |
+| **Print slip** in lobby mode (`?lobby&autoprint`) | Customers without a smartphone need a number in their hand. |
+| **Announce message** to display and phones | "Registrar closes at noon" without walking over. |
+
+## Things found and fixed along the way
+- Keyboard focus jumped to the wrong list after moving an item with the arrow keys (found by the tests).
+- The kiosk redrew **every** service card on every refresh, which could swallow a tap. It now replaces only a card whose numbers changed (with a test).
+- A "close on scroll" rule could close the actions menu the instant it opened when the browser scrolled the button into view.
+- Unused exports and dead code removed; the Vite dev proxy lists the new routes.
+
+## How it was checked
+34 API tests (new: priority order and estimates, settings permissions, calling out of turn, announcing, messages, breaks, feedback rules, purge). Browser runs: kiosk (mouse, **touch** and keyboard drag; themes with no flash; priority; breaks; announcements; re-announce; feedback; printing), display (both themes, auto-announce on/off, manual announce, messages, priority star, break, layouts), admin (call out of turn, menu, priority, pause, announce dialog, settings, queue table, feedback report), and a test that spans two pages (staff press *Announce again*, a separate display tab "speaks" it).
+**Not checked:** real audio and speech (the calls are verified, not the sound), a real receipt printer, push on a real phone, Safari/iOS, and Vite itself (esbuild compiles; please run `npm run build`).
+
+## Ideas I did not build
+Several windows per service (e.g. Registrar 1 and 2), appointments / pre-booking, SMS, an automatic no-show timer, Filipino translation.
 
 ---
 

@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme-key="qms.display.theme">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Now serving</title>
   <link rel="icon" href="/img/favicon.ico" />
+  <script src="/theme-init.js"></script>
   <link rel="stylesheet" href="/css/display.css" />
 </head>
 <body>
@@ -12,12 +13,15 @@
     <img src="/img/sti-logo-sm.png" alt="" width="160" height="114" />
     <div class="title"><h1>Now serving</h1><p id="school">Please go to the counter shown when your number is called.</p></div>
     <div class="tools">
-      <button id="sound" class="tool" type="button" aria-pressed="false"></button>
-      <button id="full" class="tool" type="button" aria-label="Full screen"></button>
+      <span id="manual" class="pill" hidden>Staff announce manually</span>
+      <button id="sound" class="tool" type="button" aria-pressed="false" title="Chime and spoken announcements"></button>
+      <button id="theme" class="tool icon-only" type="button"></button>
+      <button id="full" class="tool icon-only" type="button" aria-label="Full screen" title="Full screen"></button>
       <span class="clock" id="clock" aria-live="off"></span>
       <i id="live" class="live off" role="status" aria-label="Connection"></i>
     </div>
   </header>
+  <div id="message" class="message" role="alert" hidden></div>
   <main id="board" aria-live="polite"></main>
   <footer id="recent" hidden></footer>
   <script type="module" src="/js/display/main.js"></script>
